@@ -1,0 +1,15 @@
+{
+  "source": "local",
+  "local_root": "/srv/dsh-kb/bundle",
+  "stale_minutes": 15,
+  "snippet_chars": 240,
+  "default_limit": 8,
+  "zones": [
+    { "name": "z0-public",     "index": true,  "mirror": true,  "inject": true  },
+    { "name": "z1-restricted", "index": true,  "mirror": true,  "inject": false },
+    { "name": "z2-sensitive",  "index": false, "mirror": false, "inject": false },
+    { "name": "z3-skills",     "index": false, "mirror": true,  "inject": false }
+  ],
+  "never": ["credentials", ".credentials", "secrets", "id_rsa", "密钥", "密钥库"],
+  "index_never": ["assets/", "attachments/"]
+}

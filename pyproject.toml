@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsh-kb"
+description = "A personal Markdown knowledge base with a local mirror and index, built to be queried cheaply by AI agents."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "dsh-kb contributors" }]
+keywords = ["knowledge-base", "markdown", "full-text-search", "sqlite-fts5", "ai-agents", "local-first", "webdav"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Text Processing :: Indexing",
+  "Topic :: Utilities",
+]
+# The whole point of this project: nothing to install, nothing to keep patched.
+dependencies = []
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/LUgABeEEE/dsh-kb"
+Documentation = "https://github.com/LUgABeEEE/dsh-kb#readme"
+Source = "https://github.com/LUgABeEEE/dsh-kb"
+Issues = "https://github.com/LUgABeEEE/dsh-kb/issues"
+Changelog = "https://github.com/LUgABeEEE/dsh-kb/blob/main/CHANGELOG.md"
+
+[project.scripts]
+dsh-kb = "dsh_kb.cli:main"
+
+[tool.setuptools.dynamic]
+# Single source of truth: the version lives in `dsh_kb.__version__` only.
+version = { attr = "dsh_kb.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dsh_kb = ["py.typed"]

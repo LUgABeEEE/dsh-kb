@@ -1,0 +1,37 @@
+# Self-check output: may quote real page paths from a private bundle, so it must
+# never reach the repository (this repo has a public remote).
+.selfcheck/
+
+# State and local artifacts — never commit these.
+.kb/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+state/
+mirror/
+logs/
+config.json
+!examples/config.json
+
+# Scratch copies and experiments (never commit the previous version of a file).
+*.bak-*
+*.bak
+*.experimental-*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
