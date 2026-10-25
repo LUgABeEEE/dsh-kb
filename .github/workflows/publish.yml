@@ -1,0 +1,70 @@
+name: Publish
+
+# Publishing happens here rather than from a laptop, and without a long-lived
+# API token: PyPI verifies this workflow through OIDC (Trusted Publishing).
+# One-time setup on PyPI — "Publishing" › "Add a new pending publisher":
+#   PyPI Project Name   dsh-kb
+#   Owner               LUgABeEEE
+#   Repository name     dsh-kb
+#   Workflow name       publish.yml
+#   Environment name    pypi
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to upload the built distributions
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and check sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          python -m pip install --quiet --upgrade build twine
+          python -m build
+          python -m twine check dist/*
+      - name: The wheel must install with no dependencies and run
+        run: |
+          python -m venv /tmp/verify
+          /tmp/verify/bin/pip install --quiet --no-index dist/*.whl
+          /tmp/verify/bin/dsh-kb --version
+          /tmp/verify/bin/dsh-kb --help > /dev/null
+          /tmp/verify/bin/python -c "import dsh_kb; print('import ok', dsh_kb.__version__)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: upload
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Upload to TestPyPI
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+      - name: Upload to PyPI
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+        uses: pypa/gh-action-pypi-publish@release/v1

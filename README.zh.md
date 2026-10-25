@@ -19,7 +19,7 @@
 **两分钟试起来**（不需要共享盘、不需要写配置文件）：
 
 ```bash
-git clone <本仓库> && cd dsh-kb
+git clone https://github.com/LUgABeEEE/dsh-kb && cd dsh-kb
 bash examples/demo.sh          # 造一个临时 bundle、建索引、搜一次
 ```
 

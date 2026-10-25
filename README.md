@@ -23,7 +23,7 @@ local, so a share that is offline or slow costs you freshness, not availability.
 **Try it in two minutes** — no share and no config file needed:
 
 ```bash
-git clone <this repo> && cd dsh-kb
+git clone https://github.com/LUgABeEEE/dsh-kb && cd dsh-kb
 bash examples/demo.sh          # builds a throwaway bundle, indexes it, searches it
 ```
 
