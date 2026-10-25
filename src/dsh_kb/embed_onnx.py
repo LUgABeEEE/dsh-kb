@@ -82,7 +82,7 @@ def _load():
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         opts.intra_op_num_threads = int(os.environ.get("DSH_KB_EMBED_THREADS", "4"))
         opts.inter_op_num_threads = 1
-        # 内存：本机只有 14G，且要和 dsh-web / ollama 共用。CPU arena 默认会把
+        # 内存：推理 arena 会一直占着，和别的常驻服务共用一台小机器时很痛。默认
         # 中间张量池留到进程结束（实测 4 进程各占 3G），关掉后 RSS 降到 ~1.3G。
         opts.enable_cpu_mem_arena = os.environ.get("DSH_KB_EMBED_ARENA", "0") == "1"
         sess = ort.InferenceSession(

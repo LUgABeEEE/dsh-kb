@@ -53,6 +53,78 @@ jobs:
       - name: Handshake, list tools and call a tool through the SDK
         run: python -m unittest tests.test_mcp.TestOfficialSdkInterop -v
 
+  # The semantic arm is optional, which is exactly why it needs its own job:
+  # on the matrix above it *skips*, so without this nothing would ever prove
+  # that it works, nor that it stays off when unconfigured.
+  optional:
+    name: optional arm (numpy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Run this first, on a runner with no numpy at all: it asserts that
+      # `import dsh_kb` pulls in no third-party module and that every optional
+      # layer reports itself absent when nothing is configured.
+      - name: Unconfigured means off (zero-dependency promise)
+        run: python -m unittest tests.test_optional_off -v
+
+      # Now install the one dependency the vector arm needs, and prove two
+      # things: its own tests run (they skip on the matrix), and a full suite
+      # with numpy present still passes — nothing may switch itself on because
+      # a package happens to exist.
+      - name: Install numpy and run the vector arm's tests
+        run: |
+          python -m pip install --quiet numpy
+          python -m unittest tests.test_ragvec -v
+
+      - name: The whole suite again, with numpy installed
+        run: python -m unittest discover -s tests -t . -v
+
+  packaging:
+    name: wheel and sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          python -m pip install --quiet --upgrade build twine
+          python -m build
+          python -m twine check dist/*
+
+      # What gets published is what gets tested here: no Requires-Dist (the
+      # headline promise), the console script present, and an install into a
+      # bare venv that is not the checkout.
+      - name: The wheel is dependency-free and installs into a bare venv
+        run: |
+          set -eu
+          python -m venv /tmp/verify
+          /tmp/verify/bin/pip install --quiet --no-index dist/*.whl
+          /tmp/verify/bin/dsh-kb --version
+          /tmp/verify/bin/dsh-kb --help > /dev/null
+          /tmp/verify/bin/python - <<'PY'
+          import sys
+          import dsh_kb
+          assert not [m for m in ("numpy", "onnxruntime", "tokenizers") if m in sys.modules]
+          print("import ok", dsh_kb.__version__)
+          PY
+          python - <<'PY'
+          import email.parser, pathlib, zipfile
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          with zipfile.ZipFile(wheel) as z:
+              meta = next(n for n in z.namelist() if n.endswith("METADATA"))
+              parsed = email.parser.Parser().parsestr(z.read(meta).decode())
+          deps = parsed.get_all("Requires-Dist") or []
+          assert not deps, f"unexpected runtime dependencies: {deps}"
+          print("no Requires-Dist, as promised")
+          PY
+
   hygiene:
     name: privacy and secret hygiene
     runs-on: ubuntu-latest

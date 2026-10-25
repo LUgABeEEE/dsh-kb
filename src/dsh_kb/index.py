@@ -720,9 +720,9 @@ def search(
             hyde = None
             if weak and getattr(cfg.rag, "hyde_enabled", False):
                 import os as _os
-                if _os.environ.get("DSH_KB_HYDE_PROVIDER") == "mimo":
-                    from .ragvec import hyde_mimo
-                    hyde = hyde_mimo(query)
+                if _os.environ.get("DSH_KB_HYDE_PROVIDER") in ("remote", "http"):
+                    from .ragvec import hyde_remote
+                    hyde = hyde_remote(query)
                 else:
                     hyde = hyde_answer(query, getattr(cfg.rag, "hyde_model", "qwen2.5:7b"), int(getattr(cfg.rag, "hyde_prompt_tokens", 100) or 100))
             merged, note = augment(cfg, query, limit, seed, width, zone=zone,
@@ -770,7 +770,7 @@ def search(
                 if len(b) < min(_chars, 200):
                     b = _snp(cfg.mirror_dir, h.path, h.line, _chars)
                 _pages.append((h.path, b[:_chars]))
-            _model = str(getattr(cfg.rag, "deep_model", "mimo-v2.6-pro"))
+            _model = str(getattr(cfg.rag, "deep_model", "") or "")
             _order = _dr.pick_pages(
                 query, _pages, model=_model,
                 pick=int(getattr(cfg.rag, "deep_pick", 3) or 3),

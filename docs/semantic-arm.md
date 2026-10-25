@@ -85,7 +85,7 @@ export DSH_KB_DEEP_API_KEY=...                              # or DSH_KB_DEEP_CRE
 | Path | What leaves the machine | Where |
 |---|---|---|
 | `deep=true` search | the query **and** up to `deep_candidates` (40) pages: file name + first `deep_passage_chars` (340) characters of each page body | `DSH_KB_DEEP_ENDPOINT` |
-| HyDE (`rag.hyde_enabled`) | the query only | `DSH_KB_HYDE_ENDPOINT` |
+| HyDE (`rag.hyde_enabled`) | the query only | `DSH_KB_HYDE_ENDPOINT` — only when `DSH_KB_HYDE_PROVIDER=remote`; otherwise the local Ollama model (`rag.hyde_model`) writes it |
 | Vector arm | the query and the page text being embedded | the embedding endpoint — `http://127.0.0.1:11434` (local Ollama) by default |
 | Everything else | nothing | — |
 

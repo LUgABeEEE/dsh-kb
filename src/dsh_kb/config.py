@@ -93,8 +93,8 @@ class RagConfig:
     dim: int = DEFAULT_RAG_DIM
     enabled: bool | None = None
     #: 放行「向量库在 home 之外」。默认 ``None`` = 没表态 ⇒ ``ragcheck`` 拒绝
-    #: 带外库的 ``--prune``（2026-10-19 那次事故的形状：临时 home + 机器级
-    #: vectors 路径，6,129 行看起来全是孤儿）。要在家的外面放库，就得显式
+    #: 带外库的 ``--prune``（踩过的形状：临时 home + 机器级 vectors 路径，
+    #: 整库的向量看起来全是孤儿）。要在家的外面放库，就得显式
     #: 写 ``true``；即便放行，批量删除守卫仍然生效。
     allow_external_vectors_db: bool | None = None
     #: 可选向量臂（2026-10-23）：True 时「关键词命中不足 limit」才补一路向量检索。
@@ -113,7 +113,7 @@ class RagConfig:
     #: cross-encoder 重排：只在弱命中时对候选交叉打分。
     #: 默认关闭 —— 它要 onnxruntime + tokenizers 和约 280 MB 模型（见 docs/semantic-arm.md），
     #: 打开前先设 DSH_KB_RERANK_ROOT。关闭时与纯 FTS5 逐字节一致。
-    rerank_enabled: bool = False   # 生产实测：25/38（+1 题），top8+len192 时 p95 359ms
+    rerank_enabled: bool = False   # 一次 33 题评测：+1 题，top8+len192 时 p95 359ms
     rerank_topn: int = 8
     rerank_max_length: int = 192
     #: 重排时给 cross-encoder 的片段长度（默认 480 字 ≈ 5 行）

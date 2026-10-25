@@ -47,7 +47,7 @@ INDEXED_PATHS = ("index.md", "log.md", "z0-public/mount.md",
 
 def vec_row(rid: int, path: str, *, model: str | None = "bge-m3",
             blob: bytes | None = None, line: int = 1) -> tuple:
-    """一行向量记录；schema 与 kb-rag/kbindex.py 写出来的表一致。"""
+    """One vector row; the table shape matches what the documented builder writes."""
     return (rid, path, line, f"text-{rid}", f"hash-{rid}", model,
             b"\x00" * 4096 if blob is None else blob)
 
@@ -555,7 +555,7 @@ class TestCli(unittest.TestCase):
         text = out + err
         self.assertEqual(code, 10, text)
         self.assertIn("向量库不存在", out)
-        self.assertIn("kbask-index", text, "要说清怎么生成向量")
+        self.assertIn("向量构建器", text, "要说清怎么生成向量")
         self.assertIn("DSH_KB_RAG_VECTORS_DB", text)
 
     def test_rag_check_json_shape_and_dry_run_estimate(self):

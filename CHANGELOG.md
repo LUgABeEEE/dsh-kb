@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- No deployment-specific identifiers are left in the tree: the WebDAV credential
+  file no longer accepts one vendor's variable names, the remote HyDE writer is
+  `DSH_KB_HYDE_PROVIDER=remote` (not a product name), the CLI no longer points at
+  the author's private vector builder, and the parity test for that external tool
+  is gone.
 - HyDE no longer reads a fixed credentials file or picks a vendor endpoint from
   the shape of the key; it takes `DSH_KB_HYDE_ENDPOINT` / `_API_KEY` / `_MODEL`
   and does nothing when they are absent.

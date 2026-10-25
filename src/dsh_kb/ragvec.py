@@ -100,7 +100,7 @@ def _numpy():
 GENERATE = "http://127.0.0.1:11434/api/generate"
 
 
-def hyde_mimo(question: str, max_tokens: int = 160, timeout: float = 30.0) -> str | None:
+def hyde_remote(question: str, max_tokens: int = 160, timeout: float = 30.0) -> str | None:
     """让一个 OpenAI-compatible chat endpoint 写「假想答案」（HyDE）。
 
     需要 ``DSH_KB_HYDE_ENDPOINT`` / ``DSH_KB_HYDE_API_KEY`` / ``DSH_KB_HYDE_MODEL``；
