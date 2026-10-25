@@ -236,18 +236,23 @@ def listing(root: Path) -> str:
     return "\\n".join(lines)
 
 
-if "ls" in cmds:
-    print(listing(fixture))
-    print()
-    print("\\t\\t7772088952 blocks of size 1024. 5891711316 blocks available")
-elif "get " in cmds:
+# Dispatch on the command verb, not on a substring of the whole command line:
+# a temp path that happens to contain "ls" (e.g. TMPDIR=/tmp/ls-repro) used to
+# send `get` down the `ls` branch and fail as a random 1-in-200 flake.
+verbs = [part.split()[0] for part in (p.strip() for p in cmds.split(";")) if part]
+
+if "get" in verbs:
     m = re.search(r'get "([^"]+)" "([^"]+)"', cmds)
     shutil.copy2(fixture / m.group(1), m.group(2))
-elif "put " in cmds:
+elif "put" in verbs:
     m = re.search(r'put "([^"]+)" "([^"]+)"', cmds)
     target = fixture / m.group(2)
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(m.group(1), target)
+elif "ls" in verbs:
+    print(listing(fixture))
+    print()
+    print("\\t\\t7772088952 blocks of size 1024. 5891711316 blocks available")
 else:
     sys.exit(1)
 '''
