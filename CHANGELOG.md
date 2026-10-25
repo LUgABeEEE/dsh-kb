@@ -4,6 +4,27 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-10-25
+
+### Fixed
+
+- **The reranker gives its memory back when idle.** Resident cost after the
+  first search is ~780 MB (session 395 MB, the 17 MB `tokenizer.json` expanded
+  to 214 MB, plus a 170 MB inference arena) while a cold load takes 0.92 s, so
+  keeping it forever is a bad trade. `DSH_KB_RERANK_IDLE_S` (default 600 s, `0`
+  disables) releases the session and tokenizer after that much quiet time,
+  taking the process back to ~90 MB; the next call rebuilds in ~0.92 s.
+  Eviction runs on a daemon thread and shares one lock with inference, so a
+  model is never dropped mid-call, and scores are bit-identical before and after
+  a reload.
+- Eviction has to call `malloc_trim(0)` explicitly: `gc.collect()` alone leaves
+  the process at 436 MB because glibc keeps the freed arena.  Found the honest
+  way — the first version "worked" and freed nothing.
+- `DSH_KB_RERANK_LOG` is opt-in: the module no longer picks a log path itself.
+
+> 0.2.0 shipped without this fix: it existed in a deployment but never reached
+> the repository, which is exactly the drift this release closes.
+
 ## [0.2.0] — 2026-10-25
 
 ### Added
