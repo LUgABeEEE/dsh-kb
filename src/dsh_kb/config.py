@@ -97,6 +97,69 @@ class RagConfig:
     #: vectors 路径，6,129 行看起来全是孤儿）。要在家的外面放库，就得显式
     #: 写 ``true``；即便放行，批量删除守卫仍然生效。
     allow_external_vectors_db: bool | None = None
+    #: 可选向量臂（2026-10-23）：True 时「关键词命中不足 limit」才补一路向量检索。
+    #: 默认 False —— 关闭时连 numpy 都不 import，行为与纯 FTS5 完全一致。
+    vector_enabled: bool = False
+    #: 融合方式：``fill`` 只补齐（不动关键词顺序，默认）/ ``rrf`` 全量倒数排名融合
+    vector_mode: str = "fill"
+    #: 语义路触发：auto = 关键词不足 或 勉强命中 都走；always / never
+    vector_trigger: str = "auto"
+    #: 勉强命中判据：top-1 页面真正命中的查询词数 < 该值 即视为勉强
+    vector_weak_cov: int = 2
+    #: 覆盖率比例阈值：top-1 块里命中的查询词占比低于此值即视为勉强命中
+    vector_weak_ratio: float = 0.35
+    #: HyDE：弱命中时让本地模型先写一段假想答案，再把那段嵌入去检索
+    hyde_enabled: bool = False   # 2026-10-23 实测：+1 题但 p95 15.8s（本地 7B CPU），默认关
+    #: cross-encoder 重排：只在弱命中时对候选交叉打分。
+    #: 默认关闭 —— 它要 onnxruntime + tokenizers 和约 280 MB 模型（见 docs/semantic-arm.md），
+    #: 打开前先设 DSH_KB_RERANK_ROOT。关闭时与纯 FTS5 逐字节一致。
+    rerank_enabled: bool = False   # 生产实测：25/38（+1 题），top8+len192 时 p95 359ms
+    rerank_topn: int = 8
+    rerank_max_length: int = 192
+    #: 重排时给 cross-encoder 的片段长度（默认 480 字 ≈ 5 行）
+    rerank_passage_chars: int = 480
+    #: 重排后是否按页聚合再排序（页分 = 最高分 + 0.5*次高分）。
+    #: 动机：同一页的多个块会挤占 top-5，页级聚合能把「该页确实更相关」表达出来。
+    rerank_page_agg: bool = False
+    #: 两段重排：先粗排 topn，再对前 5 用更长上下文精排一次（只有 5 对，成本可控）。
+    rerank_two_stage: bool = False
+    #: 二段重排的截断长度与片段长度
+    rerank_stage2_maxlen: int = 384
+    rerank_stage2_chars: int = 800
+    #: 重排时是否把页面标题拼在片段前（标题是强信号，几乎零成本）。
+    rerank_title_boost: bool = False   # 截断长度：512→192 让 p95 从 908ms 降到 359ms，召回不变
+    #: doc2query 问句向量是否参与语义路打分（2026-10-23 已生成 1,737 条 / 1,457 页）
+    d2q_enabled: bool = False
+    #: 弱命中时语义路的候选池深度（默认 32；实测 256 能把 8/11 改写题的答案页纳入池内）
+    vector_depth: int = 32
+    hyde_model: str = "qwen2.5:7b"
+    hyde_prompt_tokens: int = 100
+    #: 是否总是重排（默认只在弱命中时重排）。路线1 实测用：有些题关键词臂能召回
+    #: 答案页（名次 6-17），但 top-5 被别的页占满 —— 这类题靠「弱命中才重排」永远救不回。
+    #: 限幅重排：对最终顺序跑一次 cross-encoder，但每条位移不超过 ±N（0=关闭）。
+    #: 2026-10-24 实测：±2 时 23→25/33（+2/−0），e2e 237→458ms。
+    rerank_max_shift: int = 0
+    #: 限幅重排额外多取的候选数（决定「能看到多远」的近邻）
+    rerank_shift_pool: int = 5
+    #: 深池 LLM 重排（慢车道）：deep=true 时把候选扩到 40 页、让模型挑 3 页提前。
+    #: 2026-10-24 实测 25→26/33（0.788），代价 p50 7.5s；失败自动回退普通排序。
+    deep_enabled: bool = False
+    deep_candidates: int = 40
+    deep_pick: int = 3
+    #: 深排用的模型名：与 DSH_KB_DEEP_ENDPOINT 指向的 OpenAI-compatible 服务一致。
+    deep_model: str = ""
+    deep_timeout_s: float = 25.0
+    deep_passage_chars: int = 340
+    rerank_always: bool = False
+    #: 是否**总是**跑向量臂（默认只在关键词不足/弱命中时跑）。路线1 实测用：
+    #: 强命中题里也有答案页被更通用的页压住的情况，RRF 融合能纠正一部分。
+    vector_always: bool = False
+    #: RRF 融合时两路的权重（默认 1:1）。实测：关键词臂在 mined 桶更准，
+    #: 给它更高权重能在不丢 paraphrase 收益的前提下把 mined 拉回来。
+    vector_rrf_kw_weight: float = 1.0
+    vector_rrf_vec_weight: float = 1.0
+    #: 勉强命中时让给语义路的槽位数
+    vector_weak_reserve: int = 2
 
 
 @dataclass(frozen=True)
@@ -229,7 +292,7 @@ def _coerce_zones(raw) -> tuple[Zone, ...]:
 #: rag 配置既接受嵌套写法 ``"rag": {"vectors_db": ...}``，也接受扁平写法
 #: ``"rag_vectors_db": ...``（和环境变量 DSH_KB_RAG_* 同名，方便照抄）。
 _RAG_FIELDS = ("vectors_db", "model", "dim", "enabled",
-               "allow_external_vectors_db")
+               "allow_external_vectors_db", "vector_enabled", "vector_mode", "vector_trigger", "vector_weak_cov", "vector_weak_reserve", "vector_weak_ratio", "hyde_enabled", "hyde_model", "hyde_prompt_tokens", "rerank_enabled", "rerank_topn", "rerank_max_length", "rerank_passage_chars", "rerank_page_agg", "rerank_title_boost", "rerank_two_stage", "rerank_stage2_maxlen", "rerank_stage2_chars", "rerank_max_shift", "rerank_shift_pool", "deep_enabled", "deep_candidates", "deep_pick", "deep_model", "deep_timeout_s", "deep_passage_chars", "d2q_enabled", "vector_depth", "rerank_always", "vector_always", "vector_rrf_kw_weight", "vector_rrf_vec_weight")
 _RAG_ALIASES = {
     "rag_vectors_db": "vectors_db",
     "rag_model": "model",
@@ -333,12 +396,43 @@ def load_config(**overrides) -> Config:
             rag_values[key] = os.environ[env]
     for key, env, cast in (("dim", "DSH_KB_RAG_DIM", int), ("enabled", "DSH_KB_RAG_ENABLED", _env_flag),
                            ("allow_external_vectors_db",
-                            "DSH_KB_RAG_ALLOW_EXTERNAL_VECTORS_DB", _env_flag)):
+                            "DSH_KB_RAG_ALLOW_EXTERNAL_VECTORS_DB", _env_flag),
+                           ("vector_enabled", "DSH_KB_RAG_VECTOR", _env_flag)):
         if os.environ.get(env):
             try:
                 rag_values[key] = cast(os.environ[env])
             except ValueError:
                 pass
+    # 其余 rag 子键统一走 ``DSH_KB_RAG_<FIELD>``（与扁平写法同名，便于照抄）。
+    # 早期只映射了上面几个；`rerank_*` / `deep_*` 只能写 config.json 是个陷阱 ——
+    # 一台机器用环境变量开功能、另一台用文件，排查起来会以为是两套行为。
+    _already = {"vectors_db", "model", "dim", "enabled", "allow_external_vectors_db"}
+    _flags = {"vector_enabled", "hyde_enabled", "rerank_enabled", "rerank_page_agg",
+              "rerank_title_boost", "rerank_two_stage", "rerank_always", "vector_always",
+              "deep_enabled", "d2q_enabled"}
+    _ints = {"vector_weak_cov", "vector_depth", "vector_weak_reserve", "rerank_topn",
+             "rerank_max_length", "rerank_passage_chars", "rerank_stage2_maxlen",
+             "rerank_stage2_chars", "rerank_max_shift", "rerank_shift_pool",
+             "deep_candidates", "deep_pick", "deep_passage_chars", "hyde_prompt_tokens"}
+    _floats = {"vector_weak_ratio", "vector_rrf_kw_weight", "vector_rrf_vec_weight",
+               "deep_timeout_s"}
+    for name in _RAG_FIELDS:
+        if name in _already:
+            continue
+        raw = os.environ.get("DSH_KB_RAG_" + name.upper())
+        if raw is None:
+            continue
+        try:
+            if name in _flags:
+                rag_values[name] = _env_flag(raw)
+            elif name in _ints:
+                rag_values[name] = int(raw)
+            elif name in _floats:
+                rag_values[name] = float(raw)
+            else:
+                rag_values[name] = raw
+        except ValueError:
+            pass
     if not rag_values.get("vectors_db"):
         rag_values["vectors_db"] = str(home / "index" / "vectors.sqlite")
     rag = RagConfig(**rag_values)

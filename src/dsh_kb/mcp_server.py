@@ -90,6 +90,10 @@ def tool_definitions() -> list[dict]:
                         "maximum": 800,
                         "description": "Snippet width. Default 240.",
                     },
+                    "deep": {
+                        "type": "boolean",
+                        "description": "Slow lane: LLM re-picks the best page (+5-10s). Default false.",
+                    },
                 },
             },
         },
@@ -181,6 +185,7 @@ def call_tool(cfg: Config, name: str, arguments: dict | None) -> tuple[str, bool
             snippet_chars=_as_int(arguments.get("snippet"), "snippet",
                                   minimum=60, maximum=800, default=cfg.snippet_chars),
             on_event=file_logger(cfg),
+            deep=bool(arguments.get("deep")),
         )
         return json.dumps(payload, ensure_ascii=False), False
 

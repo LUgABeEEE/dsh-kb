@@ -936,6 +936,21 @@ class TestRagConfig(unittest.TestCase):
         self.assertEqual(cfg.rag.model, "e5-mistral")
         self.assertEqual(cfg.rag.dim, 384)
 
+    def test_every_rag_key_can_be_set_from_the_environment(self):
+        """早期只有 5 个子键认环境变量，rerank_*/deep_* 只能写文件 —— 这是个陷阱。"""
+        cfg = self._load(
+            DSH_KB_RAG_RERANK_ENABLED="1",
+            DSH_KB_RAG_RERANK_MAX_SHIFT="2",
+            DSH_KB_RAG_DEEP_ENABLED="0",
+            DSH_KB_RAG_DEEP_CANDIDATES="24",
+            DSH_KB_RAG_VECTOR_WEAK_RATIO="0.5",
+        )
+        self.assertTrue(cfg.rag.rerank_enabled)
+        self.assertEqual(cfg.rag.rerank_max_shift, 2)
+        self.assertFalse(cfg.rag.deep_enabled)
+        self.assertEqual(cfg.rag.deep_candidates, 24)
+        self.assertAlmostEqual(cfg.rag.vector_weak_ratio, 0.5)
+
     def test_config_file_rag_block_is_honoured(self):
         (self.home / "config.json").write_text(
             '{"rag": {"vectors_db": "/tmp/from-file.sqlite", "model": "custom", "dim": 768}}',

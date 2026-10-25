@@ -118,10 +118,11 @@ def search_payload(
     limit: int | None = None,
     snippet_chars: int | None = None,
     note: str = "",
+    deep: bool = False,
 ) -> dict:
     result = search(
         cfg, query, zone=zone, limit=limit, snippet_chars=snippet_chars,
-        fresh_seconds=cfg.stale_minutes * 60,
+        fresh_seconds=cfg.stale_minutes * 60, deep=deep,
     )
     return {
         "ok": bool(result.hits),
@@ -132,7 +133,7 @@ def search_payload(
         "relaxed": result.relaxed,
         "dropped": result.dropped,
         "stale": result.stale,
-        "note": note or result.note,
+        "note": " | ".join(x for x in (result.note, note) if x),
         "hits": [hit_dict(h) for h in result.hits],
     }
 
@@ -146,17 +147,18 @@ def search_with_refresh(
     snippet_chars: int | None = None,
     allow_refresh: bool = True,
     on_event=None,
+    deep: bool = False,
 ) -> dict:
     """Search, refreshing first when the index looks stale.
 
     A failed refresh is reported in ``note`` but never prevents a result — that
     is what makes the mirror worth having.
     """
-    payload = search_payload(cfg, query, zone=zone, limit=limit, snippet_chars=snippet_chars)
+    payload = search_payload(cfg, query, zone=zone, limit=limit, snippet_chars=snippet_chars, deep=deep)
     if payload["stale"] and allow_refresh:
         note = ensure_fresh(cfg, on_event=on_event)
         payload = search_payload(cfg, query, zone=zone, limit=limit,
-                                 snippet_chars=snippet_chars, note=note)
+                                 snippet_chars=snippet_chars, note=note, deep=deep)
     return payload
 
 

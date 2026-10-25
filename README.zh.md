@@ -240,6 +240,7 @@ rid      = (int(chunk_id, 16) >> 4) + 1         -- FTS5 只吃整数 rowid，故
 | `snippet_chars` | `DSH_KB_SNIPPET_CHARS` | `240` | 片段宽度 |
 | `default_limit` | `DSH_KB_DEFAULT_LIMIT` | `8` | 命中条数 |
 | `zones` / `never` | — | 见上文 | 分区策略与排除清单 |
+| `rag.*` | `DSH_KB_RAG_*` | 全部关闭 | 可选语义臂 —— 见 [docs/semantic-arm.md](docs/semantic-arm.md) |
 
 WebDAV 的密钥**只从环境或凭据文件读**，不写进 `config.json`：
 
@@ -314,14 +315,31 @@ dsh-kb mcp            # 在 stdin/stdout 上讲 JSON-RPC，暴露 search / read 
 > （凭据形状的名字、过期的前缀），命令行参数不会被清洗。
 > 实测：把 `DSH_KB_*` 全部清空、只靠 `args`，对真实共享盘依然工作。
 
-设计取舍（不给 `mode`/`rerank` 之类高级参数、不暴露写操作、失败以工具结果返回）
+设计取舍（只留一个可选的 `deep` 开关、不给 `mode` 之类参数、不暴露写操作、失败以工具结果返回）
 见 [docs/design.md](docs/design.md#与-agent-集成)。
 
 ---
 
+## 可选语义臂（默认关闭）
+
+上面讲的全是词法检索。在这之上还有一层**可选**能力：向量臂、cross-encoder、
+远端模型 —— 它刻意**不在**「零依赖」的承诺范围内：
+
+| 层 | 需要 | 默认 |
+|---|---|---|
+| 向量臂 | `numpy` + 一个向量库 + 嵌入端点 | 关 |
+| cross-encoder 重排 | `onnxruntime`/`tokenizers` + 约 280 MB 模型 | 关 |
+| ONNX 嵌入后端 | 约 610 MB 模型（A/B 实验） | 关 |
+| 深池重排（`deep=true`） | 一个 OpenAI-compatible 端点 + key | 关 |
+
+保持默认时，`import dsh_kb` 不碰任何第三方代码，检索结果与 0.1.0 逐字节一致。
+开启前请先读 [docs/semantic-arm.md](docs/semantic-arm.md)：那里写了每层要什么、
+模型从哪来，以及**哪一层会把页面正文发到机器外**（是 `deep`；如果你的库里
+有"不愿粘进聊天框"的内容，就别开它）。
+
 ## 状态
 
-Alpha（0.1.0），已有 308 个测试（单元 + 端到端 + 传输层 + CLI 冒烟 + MCP，全部离线可跑）：
+Alpha（0.2.0），已有 327 个测试（单元 + 端到端 + 传输层 + CLI 冒烟 + MCP，全部离线可跑）：
 
 ```bash
 python3 -m unittest discover -s tests -t . -v
@@ -333,7 +351,7 @@ python3 -m unittest discover -s tests -t . -v
 ## Roadmap
 
 - [x] MCP 服务器（`mcp__kb__search` / `read` / `status`）
-- [ ] 语义回退：关键词零命中时才走本地嵌入检索（**不引入向量服务**）
+- [x] 语义回退：关键词零命中时才走本地嵌入检索 —— **可选、默认关闭**（[docs/semantic-arm.md](docs/semantic-arm.md)）
 - [ ] 定时刷新（systemd timer / cron 示例）
 - [ ] 中文嵌入质量评估，决定默认模型
 - [ ] 只读 HTTP 浏览界面（可选）
