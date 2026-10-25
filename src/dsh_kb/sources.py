@@ -551,9 +551,9 @@ def _webdav_from_config(cfg: Config, base_url: str):
         for line in Path(cred_file).read_text(encoding="utf-8", errors="replace").splitlines():
             key, _, value = line.partition("=")
             key = key.strip().upper()
-            if key in ("DSH_KB_WEBDAV_PASSWORD", "MINAS_PASS") and not password:
+            if key in ("DSH_KB_WEBDAV_PASSWORD", "WEBDAV_PASSWORD") and not password:
                 password = value.strip()
-            if key in ("DSH_KB_WEBDAV_USER", "MINAS_USER"):
+            if key in ("DSH_KB_WEBDAV_USER", "WEBDAV_USER"):
                 os.environ.setdefault("DSH_KB_WEBDAV_USER", value.strip())
 
     return WebDAVClient(

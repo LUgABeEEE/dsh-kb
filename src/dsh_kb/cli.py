@@ -1165,8 +1165,8 @@ def cmd_supersede_check(args) -> int:
 
 # rag-check (vector store <-> index consistency)
 # --------------------------------------------------------------------------- #
-#: 向量构建器用的 ollama 端点（kb-rag/kbindex.py 里硬编码同一地址）。doctor 只做
-#: 一次极短探测：不可达意味着"能查、但暂时不能重建"，那是 warn 不是 fail。
+#: 嵌入端点默认是本地 ollama。doctor 只做一次极短探测：不可达意味着"能查、
+#: 但暂时不能重建向量"，那是 warn 不是 fail。
 #: 设 DSH_KB_RAG_OLLAMA=- 可跳过探测（没有 ollama 的机器/离线测试）。
 RAG_OLLAMA_ENDPOINT = "http://127.0.0.1:11434"
 RAG_OLLAMA_TIMEOUT = 0.5
@@ -1196,8 +1196,8 @@ def _emit_rag_check(payload: dict) -> None:
           f"{'' if payload['enabled'] else '（配置里未启用）'}")
     if payload["store_missing"]:
         print("  !! 向量库不存在")
-        print("     建议：用向量构建器生成 —— kb-rag/kbask-index（需要 ollama，见 "
-              "kb-rag/README.md），或把 DSH_KB_RAG_VECTORS_DB 指到真实的 vectors.sqlite")
+        print("     建议：用你自己的向量构建器生成（见 docs/semantic-arm.md），"
+              "或把 DSH_KB_RAG_VECTORS_DB 指到真实的 vectors.sqlite")
     else:
         print(f"  索引 chunks（meta 行数）: {payload['chunks']}")
         print(f"  向量行数               : {payload['vectors']}")
@@ -1275,7 +1275,7 @@ def _emit_prune_refusal(prune: dict) -> None:
 def cmd_rag_check(args) -> int:
     """向量库 ↔ 索引一致性：默认只报告（dry-run），``--prune`` 才真删孤儿行。
 
-    为什么默认 dry-run：孤儿向量是**证据链**问题（``kbask`` 会引用已经删掉的页），
+    为什么默认 dry-run：孤儿向量是**证据链**问题（外部检索器会引用已经删掉的页），
     删之前人该先看一眼 orphan_sample；而 ``--prune`` 只删「页面已不在 meta」的行，
     ``kb.sqlite`` 永远只读（见 ragcheck 的模块说明）。
 

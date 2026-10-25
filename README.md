@@ -237,6 +237,7 @@ column the comparison degrades to page-level and says so in `note`.
 | `snippet_chars` | `DSH_KB_SNIPPET_CHARS` | `240` | snippet width |
 | `default_limit` | `DSH_KB_DEFAULT_LIMIT` | `8` | hits per query |
 | `zones` / `never` | — | see above | policy |
+| `rag.*` | `DSH_KB_RAG_*` | all off | optional semantic arm — see [docs/semantic-arm.md](docs/semantic-arm.md) |
 
 WebDAV secrets are read **only** from the environment or a credentials file,
 never from `config.json`:
@@ -323,14 +324,34 @@ Wiring it into DSH is one `insert` (other hosts:
 > `DSH_KB_*` variable removed and only `args` set, it still works against a real
 > share.
 
-Design choices — no `mode`/`rerank` knobs, no write tools, failures returned as
-tool results — are in [docs/design.md](docs/design.md#agent-integration).
+Design choices — one optional `deep` flag, no `mode` knobs, no write tools, failures
+returned as tool results — are in [docs/design.md](docs/design.md#agent-integration).
 
 ---
 
+## Optional semantic arm (off by default)
+
+Everything above is lexical. On top of it there is an **opt-in** layer that can
+add embedding hits, a cross-encoder, or a remote model — and it is deliberately
+outside the zero-dependency promise:
+
+| Layer | Needs | Default |
+|---|---|---|
+| Vector arm | `numpy` + a vector store + an embedding endpoint | off |
+| Cross-encoder rerank | `onnxruntime`/`tokenizers` + ~280 MB model | off |
+| ONNX embedding backend | ~610 MB model (A/B experiment) | off |
+| Deep rerank (`deep=true`) | an OpenAI-compatible endpoint + key | off |
+
+With the defaults, `import dsh_kb` never touches third-party code and a search
+is byte-identical to 0.1.0. Read
+[docs/semantic-arm.md](docs/semantic-arm.md) before enabling anything: it lists
+what each layer needs, where the models come from, and **which of them send page
+text off the machine** (`deep` does; that is the one to leave off if your bundle
+holds anything you would not paste into a chat window).
+
 ## Status
 
-Alpha (0.1.0) with 308 tests (unit, end-to-end, transport, CLI smoke and MCP — all offline):
+Alpha (0.2.0) with 327 tests (unit, end-to-end, transport, CLI smoke and MCP — all offline):
 
 ```bash
 python3 -m unittest discover -s tests -t . -v
@@ -342,7 +363,7 @@ client against this hand-rolled server); otherwise it skips.
 ## Roadmap
 
 - [x] MCP server (`mcp__kb__search` / `read` / `status` / `skills`)
-- [ ] Semantic fallback, used only when keyword search returns nothing (**no vector service**)
+- [x] Semantic fallback, used only when keyword search returns nothing — **opt-in and off by default** ([docs/semantic-arm.md](docs/semantic-arm.md))
 - [ ] Scheduled refresh (systemd timer / cron examples)
 - [ ] Chinese embedding evaluation to pick a default model
 - [ ] Optional read-only HTTP viewer

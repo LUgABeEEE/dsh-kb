@@ -4,6 +4,53 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-10-25
+
+### Added
+
+- **Optional semantic arm**, four opt-in layers, every one of them off by
+  default: the vector arm (`ragvec.py`), a cross-encoder reranker (`rerank.py`),
+  an ONNX embedding backend kept for A/B work (`embed_onnx.py`), and a deep
+  rerank that lets a remote model pick pages (`deeprank.py`).  Documented in
+  [docs/semantic-arm.md](docs/semantic-arm.md), including the table of what each
+  layer sends off the machine.
+- `deep` on the MCP `search` tool (and `service.search`).  It only does anything
+  when `rag.deep_enabled` is on; otherwise it is a no-op, not an error.
+- Every `rag.*` key can be set from the environment as `DSH_KB_RAG_<FIELD>`.
+  Before this, only five of them were mapped, so `rerank_*` and `deep_*`
+  silently required a `config.json` — two machines could behave differently
+  with no visible difference in configuration.
+- Three test modules for the new code, and 327 tests total (was 308).
+
+### Changed
+
+- `rag.rerank_enabled` now defaults to **false**.  It used to be `true` while
+  being gated by `rerank_max_shift=0`, which reads as "on" in any config dump
+  even though nothing ran — the kind of default that lies.
+- `rag.deep_model` defaults to empty instead of a vendor model name: the
+  endpoint, the model and the key are all deployment decisions.
+- The vector store defaults to `<home>/index/vectors.sqlite` rather than an
+  absolute path on the author's machine.
+- Optional paths have no built-in defaults any more: `DSH_KB_RERANK_ROOT`,
+  `DSH_KB_EMBED_ONNX_ROOT`, `DSH_KB_ONNX_LIB` and `DSH_KB_NUMPY_PATH` are unset
+  by default, and unset means the layer is off.  A clone that has never heard of
+  these variables cannot accidentally load a model from someone else's disk.
+- Deep-rerank configuration is environment-only: `DSH_KB_DEEP_API_KEY`,
+  `DSH_KB_DEEP_CREDENTIALS`, `DSH_KB_DEEP_ENDPOINT`, `DSH_KB_DEEP_LOG`.  No
+  vendor URL, key file or log path is baked into the code.
+
+### Fixed
+
+- No deployment-specific identifiers are left in the tree: the WebDAV credential
+  file no longer accepts one vendor's variable names, the remote HyDE writer is
+  `DSH_KB_HYDE_PROVIDER=remote` (not a product name), the CLI no longer points at
+  the author's private vector builder, and the parity test for that external tool
+  is gone.
+- HyDE no longer reads a fixed credentials file or picks a vendor endpoint from
+  the shape of the key; it takes `DSH_KB_HYDE_ENDPOINT` / `_API_KEY` / `_MODEL`
+  and does nothing when they are absent.
+- `ragvec._numpy()` no longer falls back to a machine-specific directory.
+
 ## [0.1.0] — 2026-10-25
 
 First public version. Written against a real deployment: a Markdown bundle on

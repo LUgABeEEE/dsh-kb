@@ -69,7 +69,7 @@ dsh-kb mcp                     # 或用 python -m dsh_kb mcp
 
 ```yaml
     env:
-      DSH_KB_WEBDAV_ROOT: https://nas.example:5000/pool0/data/kb
+      DSH_KB_WEBDAV_ROOT: https://nas.example:5000/dav/kb
       DSH_KB_WEBDAV_USER: me
       DSH_KB_WEBDAV_PASSWORD: '***'
       # mTLS 场景

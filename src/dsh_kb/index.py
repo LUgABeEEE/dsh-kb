@@ -38,6 +38,7 @@ be rebuilt from the mirror at any time.
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -379,10 +380,16 @@ create index meta_path_line on meta(path, startline);
 def build(cfg: Config, *, on_event=None) -> IndexStats:
     """Rebuild the index from scratch, in the CAS schema.
 
-    The database file is deleted first on purpose: ``DROP TABLE`` does not
-    return pages to the filesystem, so a rebuild after a shrink would otherwise
-    keep the file at its historical maximum size (measured: 271 MB that would
-    not come down).
+    The rebuild is written to ``<db>.tmp`` and swapped in with :func:`os.replace`,
+    then the previous database is kept as ``<db>.prev``.  Two reasons:
+
+    * **crash safety** — the old implementation deleted the live database first,
+      so a crash mid-build left an empty index and search returned nothing
+      (2026-10-24 post-mortem);
+    * **size** — ``DROP TABLE`` does not return pages to the filesystem, so a
+      rebuild after a shrink would otherwise keep the file at its historical
+      maximum (measured: 271 MB that would not come down); a fresh temp file
+      is inherently compact.
 
     Chunks are keyed by :func:`chunk_id_of`; the FTS rowid is :func:`rid_of`
     applied to it, so the same corpus always yields the same keys.  Collisions
@@ -393,14 +400,15 @@ def build(cfg: Config, *, on_event=None) -> IndexStats:
     started = time.perf_counter()
     db = cfg.index_db
     db.parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(str(db) + ".tmp")
     for suffix in ("", "-wal", "-shm"):
-        stale = Path(str(db) + suffix)
+        stale = Path(str(tmp) + suffix)
         if stale.exists():
             stale.unlink()
 
     stats = IndexStats()
     ids = _ChunkIds()
-    con = sqlite3.connect(db)
+    con = sqlite3.connect(str(tmp))
     try:
         con.executescript(_CAS_DDL)
         for rel, path in _index_files(cfg):
@@ -447,6 +455,21 @@ def build(cfg: Config, *, on_event=None) -> IndexStats:
     finally:
         con.close()
 
+    if stats.pages == 0 or stats.chunks == 0:
+        for suffix in ("", "-wal", "-shm"):
+            junk = Path(str(tmp) + suffix)
+            if junk.exists():
+                junk.unlink()
+        raise RuntimeError("rebuild produced an empty index; previous index kept")
+
+    if db.exists():
+        os.replace(db, Path(str(db) + ".prev"))
+    for suffix in ("-wal", "-shm"):
+        junk = Path(str(db) + suffix)
+        if junk.exists():
+            junk.unlink()
+    os.replace(tmp, db)
+
     if ids.id_collisions:
         emit(f"!! {len(ids.id_collisions)} chunk_id collision(s) resolved by suffix: "
              f"{ids.id_collisions[:3]}")
@@ -489,13 +512,21 @@ def search(
     snippet_chars: int | None = None,
     fresh_seconds: float | None = None,
     include_superseded: bool = True,
+    deep: bool = False,
 ) -> SearchResult:
     """Run a ranked full-text query against the local index.
 
     ``fresh_seconds`` marks the result ``stale`` when the mirror is older than
     that many seconds, so a caller can decide to refresh and retry.
     """
-    limit = limit or cfg.default_limit
+    wanted = limit or cfg.default_limit
+    _shift = int(getattr(cfg.rag, "rerank_max_shift", 0) or 0)
+    _deep = bool(deep) and bool(getattr(cfg.rag, "deep_enabled", False))
+    # 限幅重排要能看到「更多候选」才有意义：内部多取 2σ 条，末尾再截回 wanted。
+    _pool_extra = int(getattr(cfg.rag, "rerank_shift_pool", 5) or 0)
+    limit = wanted + (_pool_extra if _shift > 0 else 0)
+    if _deep:
+        limit = max(limit, int(getattr(cfg.rag, "deep_candidates", 40) or 40))
     width = snippet_chars or cfg.snippet_chars
     zones = cfg.zones_for_query(zone)
     prefixes = cfg.query_prefixes(zone)
@@ -591,6 +622,7 @@ def search(
         con.close()
 
     seen: set[str] = set()
+    first_cov = None
     for row in rows:
         path, start_line, text, score = row[:4]
         succ = row[4] if len(row) > 4 else ""
@@ -619,6 +651,9 @@ def search(
             fragment = mark + fragment
             result.superseded_shown += 1
         own_zone = cfg.zone_for(path)
+        if first_cov is None:
+            _m = len(set(tokens) & set(query_tokens(text)))
+            first_cov = (_m / len(tokens)) if tokens else 1.0
         result.hits.append(
             Hit(
                 path=path,
@@ -667,8 +702,127 @@ def search(
     if fresh_seconds is not None:
         age = index_age(cfg)
         result.stale = age is None or age > fresh_seconds
+    # 可选向量臂：只在关键词命中不足 limit 时补一路（默认关闭）。
+    # 位置刻意放在所有关键词逻辑之后 —— 关闭时行为与旧版逐字节一致；
+    # 任何异常都只降级成 note，绝不影响关键词结果。
+    trigger = str(getattr(cfg.rag, "vector_trigger", "auto") or "auto")
+    weak_ratio = float(getattr(cfg.rag, "vector_weak_ratio", 0.35) or 0.0)
+    weak = (first_cov is not None and first_cov < weak_ratio)
+    reserve = int(getattr(cfg.rag, "vector_weak_reserve", 2) or 0) if (weak and trigger == "auto") else 0
+    keyword_slots = max(1, wanted - reserve)
+    need_vector = cfg.rag.vector_enabled and (
+        bool(getattr(cfg.rag, 'vector_always', False))
+        or len(result.hits) < wanted or reserve > 0)
+    if need_vector:
+        try:
+            from .ragvec import augment, hyde_answer
+            seed = result.hits[:keyword_slots] if reserve else result.hits
+            hyde = None
+            if weak and getattr(cfg.rag, "hyde_enabled", False):
+                import os as _os
+                if _os.environ.get("DSH_KB_HYDE_PROVIDER") in ("remote", "http"):
+                    from .ragvec import hyde_remote
+                    hyde = hyde_remote(query)
+                else:
+                    hyde = hyde_answer(query, getattr(cfg.rag, "hyde_model", "qwen2.5:7b"), int(getattr(cfg.rag, "hyde_prompt_tokens", 100) or 100))
+            merged, note = augment(cfg, query, limit, seed, width, zone=zone,
+                                   mode=getattr(cfg.rag, "vector_mode", "fill"), hyde=hyde, rerank=weak or bool(getattr(cfg.rag, 'rerank_always', False)))
+            if merged:
+                result.hits = merged
+                tag = "weak-match " if weak else ""
+                result.note = (result.note + " | " if result.note else "") + tag + note
+        except Exception as exc:  # noqa: BLE001 - 语义路永不影响关键词路径
+            extra = f"vector arm skipped: {type(exc).__name__}: {exc}"
+            result.note = (result.note + " | " if result.note else "") + extra
+    # 限幅重排（maxshift）：最终顺序上再跑一次 cross-encoder，但每条位移不超过 σ。
+    # 默认 0 = 关闭，行为与旧版逐字节一致；异常只降级成 note。
+    shift = _shift
+    if shift > 0 and getattr(cfg.rag, "rerank_enabled", False) and len(result.hits) > 1:
+        try:
+            from . import rerank as _rr
+            from .ragvec import _snippet as _snp
+            _chars = int(getattr(cfg.rag, "rerank_passage_chars", 480) or 480)
+            _passages = [_snp(cfg.mirror_dir, h.path, h.line, _chars) for h in result.hits]
+            _scores = _rr.score_pairs(query, _passages)
+            if _scores is not None and len(_scores) == len(result.hits):
+                before = [(h.path, h.line) for h in result.hits]
+                result.hits = _clamp_shift(result.hits, _scores, shift)
+                if before != [(h.path, h.line) for h in result.hits]:
+                    result.note = (result.note + " | " if result.note else "") + f"maxshift ±{shift}"
+        except Exception:
+            pass
+    if _deep and len(result.hits) > 1:
+        try:
+            from . import deeprank as _dr
+            from .ragvec import _snippet as _snp
+            _seen: set = set()
+            _uniq: list = []
+            for h in result.hits:
+                if h.path in _seen:
+                    continue
+                _seen.add(h.path)
+                _uniq.append(h)
+            _chars = int(getattr(cfg.rag, "deep_passage_chars", 340) or 340)
+            _cap = int(getattr(cfg.rag, "deep_candidates", 40) or 40)
+            _pages = []
+            for h in _uniq[:_cap]:
+                b = (getattr(h, "snippet", "") or "").strip()
+                if len(b) < min(_chars, 200):
+                    b = _snp(cfg.mirror_dir, h.path, h.line, _chars)
+                _pages.append((h.path, b[:_chars]))
+            _model = str(getattr(cfg.rag, "deep_model", "") or "")
+            _order = _dr.pick_pages(
+                query, _pages, model=_model,
+                pick=int(getattr(cfg.rag, "deep_pick", 3) or 3),
+                timeout=float(getattr(cfg.rag, "deep_timeout_s", 25) or 25),
+            )
+            if _order:
+                _picked = [_pages[i - 1][0] for i in _order if 0 < i <= len(_pages)]
+                _by = {}
+                for h in _uniq:
+                    _by.setdefault(h.path, h)
+                _head = [_by[x] for x in _picked if x in _by]
+                _pset = set(_picked)
+                result.hits = _head + [h for h in _uniq if h.path not in _pset]
+                result.note = (result.note + " | " if result.note else "") + "deep=true：LLM 挑 %d 页（%s）" % (len(_head), _model)
+            else:
+                result.note = (result.note + " | " if result.note else "") + "deep=true：LLM 不可用，回退普通排序"
+        except Exception as _exc:
+            result.note = (result.note + " | " if result.note else "") + "deep=true 跳过：%s" % type(_exc).__name__
+    if len(result.hits) > wanted:
+        result.hits = result.hits[:wanted]
     return result
 
+
+def _clamp_shift(hits: list, scores: list, sigma: int) -> list:
+    """按 cross-encoder 分排，但每条落位相对原名次位移不超过 sigma（贪心指派）。
+
+    为什么不是直接采用重排顺序：池内多数题的正确答案只与前后几名差 0.1~0.2，
+    全量重排会把 p-06 这类「并列页」挤出前 5；限幅只允许「近邻上移」，
+    2026-10-24 实测 +2 题 / −0（33 题口径）。
+    """
+    n = len(hits)
+    if n < 2 or sigma <= 0:
+        return hits
+    desired = [h for _s, h in sorted(zip(scores, hits), key=lambda t: -t[0])]
+    orig = {id(h): i for i, h in enumerate(hits)}
+    slots: list = [None] * n
+    placed: set = set()
+    for h in desired:
+        o = orig[id(h)]
+        lo, hi = max(0, o - sigma), min(n - 1, o + sigma)
+        for pos in range(lo, hi + 1):
+            if slots[pos] is None:
+                slots[pos] = h
+                placed.add(id(h))
+                break
+    for h in hits:
+        if id(h) not in placed:
+            for pos in range(n):
+                if slots[pos] is None:
+                    slots[pos] = h
+                    break
+    return [h for h in slots if h is not None]
 
 @dataclass
 class ReadResult:

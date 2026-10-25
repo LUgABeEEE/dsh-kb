@@ -52,7 +52,8 @@ feeling.
 
 **Known gaps that are acceptable to publish with — and are written down**
 
-- Lexical search only; a semantic fallback is planned and not implemented.
+- Lexical by default. The optional semantic arm exists but is off, opt-in, and
+  explicitly outside the zero-dependency promise (docs/semantic-arm.md).
 - No Windows CI job, although Windows is a supported target (a Windows UNC
   share is the reason generated names are lowercased).
 - The MCP server implements the three methods an agent needs and does not
