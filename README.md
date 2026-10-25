@@ -4,6 +4,10 @@
 storage, each machine keeps a mirror and an index, retrieval is fast and works
 offline.**
 
+[![CI](https://github.com/LUgABeEEE/dsh-kb/actions/workflows/ci.yml/badge.svg)](https://github.com/LUgABeEEE/dsh-kb/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/dsh-kb.svg)](https://pypi.org/project/dsh-kb/)
+[![Python](https://img.shields.io/pypi/pyversions/dsh-kb.svg)](https://pypi.org/project/dsh-kb/)
+
 English | [中文](README.zh.md)
 
 ---
