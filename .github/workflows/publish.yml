@@ -1,16 +1,15 @@
 name: Publish
 
-# Publishing happens here rather than from a laptop, and without a long-lived
-# API token: PyPI verifies this workflow through OIDC (Trusted Publishing).
-# One-time setup on PyPI — "Publishing" › "Add a new pending publisher":
-#   PyPI Project Name   dsh-kb
-#   Owner               LUgABeEEE
-#   Repository name     dsh-kb
-#   Workflow name       publish.yml
-#   Environment name    pypi
+# Manual on purpose.  Uploading through OIDC (Trusted Publishing) needs a
+# one-time "pending publisher" registered on PyPI for this repository:
+#   PyPI Project Name  dsh-kb
+#   Owner              LUgABeEEE
+#   Repository name    dsh-kb
+#   Workflow name      publish.yml
+#   Environment name   pypi
+# Until that exists this workflow cannot authenticate, so it must not fire on
+# every release.  Add `release: {types: [published]}` back once it is set up.
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       target:
@@ -61,10 +60,10 @@ jobs:
           name: dist
           path: dist/
       - name: Upload to TestPyPI
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+        if: github.event.inputs.target == 'testpypi'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
       - name: Upload to PyPI
-        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+        if: github.event.inputs.target == 'pypi'
         uses: pypa/gh-action-pypi-publish@release/v1
