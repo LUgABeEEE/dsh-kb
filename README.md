@@ -184,7 +184,8 @@ by tests.
 | `search <q> [-n] [--zone] [--snippet] [--refresh] [--no-auto-refresh] [--json]` | — | ranked search |
 | `read <path> [--start] [--lines] [--json]` | — | line window |
 | `skills search\|show\|stats` | — | query the skill library in the `z3-skills` asset zone |
-| `push [files…] [--force] [--expect SHA256] [--log [N]] [--json]` | ✔ | upload proposals |
+| `supersede-check [--json] [--proposal FILE]` | — | supersession health (A1–A5) and the R1 proposal gate |
+| `push [files…] [--force] [--expect SHA256] [--log [N]] [--allow-undeclared] [--json]` | ✔ | upload proposals (the supersession gate can refuse the batch) |
 | `mcp` | — | run the MCP server on stdio (for agent hosts) |
 
 Shared flags are accepted before or after the subcommand.
@@ -194,6 +195,15 @@ exception: it creates and deletes a probe file in `home`, and — when the sourc
 exposes it — writes and deletes a probe under `_incoming/` on the share, to
 answer "can `push` work at all?". The probes are removed again; nothing else is
 written. Don't wire `doctor` into anything that must be strictly read-only.
+
+**Supersession is a first-class relation.** A page may carry `supersedes: [...]` or
+`superseded_by: <path>` in its front matter, and `dsh-kb supersede-check` reports the
+four ways that relation goes wrong: a link nobody answers (not reciprocal), a cycle, a
+dangling target, and a page claimed by two successors. The same relation is a **gate on
+writes**: `push` refuses a whole batch when a proposal's title collides with a live page
+and it declares neither `supersedes:` nor `not_superseding: "<why>"` — `--allow-undeclared`
+is the explicit bypass. One prompt at the write door is cheaper than untangling two
+near-duplicates that both look current six months later.
 
 **Exit codes.** `diff` and `rag-check` share one contract: **0** clean, **10**
 something needs a human, **11** local state is unreadable / the store is broken.

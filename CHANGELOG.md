@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — 2026-10-29
+
+### Added
+
+- **Documentation for the supersession model.** `dsh-kb supersede-check` existed
+  but appeared nowhere in the README, which made a first-class relation look like
+  a private feature. The README now covers it: what `supersedes:` /
+  `superseded_by:` mean, the four ways the relation goes wrong (one-way link,
+  cycle, dangling target, two successors), and the fact that the same relation is
+  a **gate on writes** — `push` refuses a whole batch when a proposal collides
+  with a live page's title and declares neither `supersedes:` nor
+  `not_superseding: "<why>"`, with `--allow-undeclared` as the explicit bypass.
+
+### Changed
+
+- `supersede-check --help` is in English, like every other command.
+
+### Fixed
+
+- `docs/deployment.md` listed four of the fourteen `doctor` checks; it now lists
+  them all, including the optional local embedding probe (`DSH_KB_RAG_OLLAMA=-`
+  disables it).
+
 ## [0.2.1] — 2026-10-25
 
 ### Fixed

@@ -1420,10 +1420,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_rag_check)
 
     p = command("supersede-check",
-                "取代关系体检：互逆 / 无环 / 无悬挂 / 单后继（spec A1–A5）；"
-                "--proposal 则对一份提案跑 R1 闸门")
+                "supersession health check (spec A1-A5: reciprocal links, no cycles, "
+                "no dangling targets, single successor); --proposal runs the R1 gate on a draft")
     p.add_argument("--proposal", metavar="FILE", default=None,
-                   help="对这份提案跑提案闸门（R1）：与现行页标题撞车却没声明就报 must_declare")
+                   help="run the proposal gate (R1) on this draft: a title collision with a live "
+                        "page and no declaration is reported as must_declare")
     p.set_defaults(func=cmd_supersede_check)
 
     p = command("sync", "refresh the mirror from the source")

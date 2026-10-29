@@ -165,7 +165,8 @@ dsh-kb push                        # 把本地 _incoming/ 的提案推上去
 | `search <q> [-n] [--zone] [--snippet] [--refresh] [--no-auto-refresh] [--json]` | — | 排序检索 |
 | `read <path> [--start] [--lines] [--json]` | — | 行窗口 |
 | `skills search\|show\|stats` | — | 查 `z3-skills` 资产区里的 skill 总库 |
-| `push [files…] [--force] [--expect SHA256] [--log [N]] [--json]` | ✔ | 上传 `_incoming/` 提案 |
+| `supersede-check [--json] [--proposal FILE]` | — | 取代关系体检（A1–A5）与 R1 提案闸门 |
+| `push [files…] [--force] [--expect SHA256] [--log [N]] [--allow-undeclared] [--json]` | ✔ | 上传 `_incoming/` 提案（可能被取代闸门整批拦下） |
 | `mcp` | — | 在 stdio 上跑 MCP 服务器（给 agent 宿主用） |
 
 全局 flag 写在子命令前后都可以（`dsh-kb --json status` ≡ `dsh-kb status --json`）。
@@ -174,6 +175,13 @@ dsh-kb push                        # 把本地 _incoming/ 的提案推上去
 创建再删掉一个探针文件；源支持探写时，还会在共享盘的 `_incoming/` 下写一个探针
 再删掉（用来回答"`push` 到底能不能用"）。探针文件会清理掉，除此之外不写任何东西。
 **别把它塞进"必须严格只读"的位置。**
+
+**取代关系是一等公民。** 页面可以在 front matter 里写 `supersedes: [...]` 或
+`superseded_by: <path>`，`dsh-kb supersede-check` 报告这种关系坏掉的四种样子：单向
+（对方不认账）、成环、指向不存在的页、一页被两个后继认领。同一条关系还是**写入口的
+闸门**：提案标题与现行页撞车、又没写 `supersedes:` 或 `not_superseding: "<理由>"` 时，
+`push` 会把整批拒绝（`--allow-undeclared` 是显式绕过）。在写入口问一句，比半年后
+从库里清两份都像现行的近重复页便宜得多。
 
 **退出码**：`diff` 与 `rag-check` 共用一套约定——**0** 干净；**10** 有需要人处理的
 项；**11** 本地状态读不出来 / 库坏了。`rag-check --force` **不带** `--prune` 属于
