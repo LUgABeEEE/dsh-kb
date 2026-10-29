@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-10-29
+
+### Fixed
+
+- **Imported pages are byte-deterministic now.** `import` stamped
+  `generated.at` with the wall clock, so two runs a few seconds apart produced
+  different bytes for every page — which meant re-importing an unchanged export
+  rewrote all of them (`changed=20`, `written=20`) instead of reporting
+  `same=20`. Pages now carry `generated: { by: <generator> }` and no timestamp;
+  pass `--as-of <ISO8601>` when a page really should record a date.
+- A group whose name already ends in `.md` no longer produces `name.md.md`.
+
+Found by the review gate of a real migration: the content was verified lossless
+(2960 records, all present, old tags preserved), and the only blocker was that
+the renderer was not reproducible.
+
 ## [0.3.0] — 2026-10-29
 
 ### Added

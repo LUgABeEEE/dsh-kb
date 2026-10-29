@@ -66,6 +66,10 @@ class TestSlug(unittest.TestCase):
     def test_empty_becomes_a_usable_stem(self):
         self.assertEqual(importer.slug("///"), "page")
 
+    def test_a_markdown_suffix_is_not_doubled(self):
+        self.assertEqual(importer.slug("agents.md"), "agents")
+        self.assertEqual(importer.slug("notes.markdown"), "notes")
+
 
 class TestPlan(unittest.TestCase):
     def _plan(self, recs, **kwargs):
@@ -136,6 +140,20 @@ class TestRender(unittest.TestCase):
         self.assertIn("## A note · 2026-10-20", page.content)
         self.assertIn("id: `one` · type: fact · origin: obsidian · tags: git", page.content)
         self.assertTrue(page.content.endswith("\n"))
+
+    def test_no_wall_clock_by_default(self):
+        """Re-importing the same records must write nothing — that needs a stable page."""
+        page = importer.plan(cfg(), records(Record(content="a", tags=("git",))),
+                             prefix="m", zone="z1-restricted", generator="g",
+                             resource="r").pages[0]
+        self.assertNotIn("at:", page.content)
+        self.assertIn("generated: { by: g }", page.content)
+
+    def test_an_explicit_as_of_is_recorded_verbatim(self):
+        page = importer.plan(cfg(), records(Record(content="a", tags=("git",))),
+                             prefix="m", zone="z1-restricted", generator="g",
+                             resource="r", at="2026-10-29T00:00:00+08:00").pages[0]
+        self.assertIn("generated: { by: g, at: 2026-10-29T00:00:00+08:00 }", page.content)
 
     def test_the_same_records_render_the_same_bytes(self):
         recs = records(Record(content="a", tags=("t",)), Record(content="b", tags=("t",)))

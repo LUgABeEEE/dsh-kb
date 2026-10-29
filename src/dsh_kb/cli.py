@@ -1284,7 +1284,10 @@ def cmd_import(args) -> int:
     from .importers import load as load_records
 
     cfg = _config(args)
-    at = datetime.now().astimezone().isoformat(timespec="seconds")
+    # Deterministic by default: no wall-clock stamp, so re-importing the same
+    # records renders the same bytes and writes nothing.  --as-of exists for the
+    # case where a page really should record a date.
+    at = args.as_of or ""
     generator = f"dsh-kb import/{args.format}"
     try:
         records = load_records(args.format, Path(args.source_path), wikilinks=args.wikilinks)
@@ -1518,6 +1521,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="permit writing into a z0 zone (refused by default)")
     p.add_argument("--max-page-bytes", type=int, default=2_000_000, metavar="N",
                    help="refuse to render a page larger than this (default 2000000)")
+    p.add_argument("--as-of", default="", metavar="ISO8601",
+                   help="record this timestamp in the pages' generated.at; omit it (the "
+                        "default) and the page carries no timestamp, which keeps re-imports "
+                        "byte-identical")
     p.add_argument("--write", action="store_true",
                    help="actually write; without it the command only reports")
     p.set_defaults(func=cmd_import)

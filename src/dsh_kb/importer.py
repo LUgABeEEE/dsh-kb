@@ -69,6 +69,9 @@ def slug(text: str, limit: int = 48) -> str:
     cleaned = _UNSAFE.sub("-", str(text or "").strip()).strip("-.")
     cleaned = "".join(ch for ch in cleaned if ch.isalnum() or ch in "-_.")
     cleaned = cleaned.lower().strip("-.")
+    for suffix in (".markdown", ".md"):
+        if cleaned.endswith(suffix) and len(cleaned) > len(suffix):
+            cleaned = cleaned[: -len(suffix)]
     return (cleaned[:limit].rstrip("-.")) or "page"
 
 
@@ -113,7 +116,8 @@ def _front_matter(*, type_: str, title: str, description: str, tags: list[str],
         f"tags: {quoted}",
         f"zone: {zone.split('-')[0]}",
         "status: stable",
-        f"generated: {{ by: {generator}, at: {at} }}",
+        (f"generated: {{ by: {generator}, at: {at} }}" if at
+         else f"generated: {{ by: {generator} }}"),
         "sources:",
         f"  - id: {generator}",
         f"    resource: {resource}",
