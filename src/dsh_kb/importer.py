@@ -33,6 +33,14 @@ _UNSAFE = re.compile(r'[\\/:*?"<>|\s]+')
 #: Fallback group when a record has no tags at all.
 UNTAGGED = "untagged"
 
+#: Tags that describe the import machinery rather than the knowledge.  They are
+#: kept on the record (traceability) but must not reach the page's front matter.
+INTERNAL_TAG_PREFIXES = ("src-", "workspace:", "qc:")
+
+#: Front matter is a summary, not an index: a page holding 500 records would
+#: otherwise carry every tag it ever saw (measured: a 2.5 KB single line).
+MAX_FRONT_MATTER_TAGS = 10
+
 
 @dataclass(frozen=True)
 class Page:
@@ -131,11 +139,14 @@ def render(records: list[Record], *, title: str, generator: str, resource: str,
     """One page: front matter, a provenance line, then one section per record."""
     ordered = sorted(records, key=lambda r: (_date(r.updated_at), r.id, r.content[:40]))
     types = sorted({r.type for r in ordered})
-    tags: list[str] = []
+    counts: dict[str, int] = {}
     for record in ordered:
         for tag in record.tags:
-            if tag not in tags:
-                tags.append(tag)
+            if tag.startswith(INTERNAL_TAG_PREFIXES):
+                continue
+            counts[tag] = counts.get(tag, 0) + 1
+    ranked = sorted(counts, key=lambda tag: (-counts[tag], tag))
+    tags: list[str] = ranked[:MAX_FRONT_MATTER_TAGS]
     for type_ in types:
         if type_ not in tags:
             tags.append(type_)

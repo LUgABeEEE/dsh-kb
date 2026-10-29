@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] — 2026-10-29
+
+### Fixed
+
+- **Front matter tags are a summary again.** The renderer accumulated every tag
+  of every record on the page, including internal `src-*:`, `workspace:` and
+  `qc:` markers — on a 57-record page that was a single 2.5 KB line. Tags are now
+  ranked by frequency, internal markers are dropped (they stay on the record for
+  traceability) and the list is capped at 10 plus the page's types.
+
 ## [0.3.1] — 2026-10-29
 
 ### Fixed

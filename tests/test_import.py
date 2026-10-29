@@ -141,6 +141,26 @@ class TestRender(unittest.TestCase):
         self.assertIn("id: `one` · type: fact · origin: obsidian · tags: git", page.content)
         self.assertTrue(page.content.endswith("\n"))
 
+    def test_front_matter_tags_are_a_summary_not_an_index(self):
+        recs = [Record(content="a", tags=("git", "src-id:mem_1", "workspace:/x", "qc:stale")),
+                Record(content="b", tags=("git", "docker"))]
+        page = importer.plan(cfg(), recs, prefix="m", zone="z1-restricted",
+                             generator="g", resource="r").pages[0]
+        front = page.content.split("---")[1]
+        self.assertIn("git", front)
+        self.assertIn("docker", front)
+        self.assertNotIn("src-id:", front, "internal tags stay on the record, not the page")
+        self.assertNotIn("workspace:", front)
+        self.assertNotIn("qc:", front)
+
+    def test_front_matter_tags_are_capped(self):
+        recs = [Record(content=str(i), tags=(f"tag{i:02d}",)) for i in range(30)]
+        page = importer.plan(cfg(), recs, prefix="m", zone="z1-restricted",
+                             generator="g", resource="r").pages[0]
+        front = page.content.split("---")[1]
+        tags_line = next(line for line in front.splitlines() if line.startswith("tags:"))
+        self.assertLessEqual(tags_line.count('"') // 2, importer.MAX_FRONT_MATTER_TAGS + 5)
+
     def test_no_wall_clock_by_default(self):
         """Re-importing the same records must write nothing — that needs a stable page."""
         page = importer.plan(cfg(), records(Record(content="a", tags=("git",))),
