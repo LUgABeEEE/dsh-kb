@@ -185,6 +185,7 @@ by tests.
 | `read <path> [--start] [--lines] [--json]` | — | line window |
 | `skills search\|show\|stats` | — | query the skill library in the `z3-skills` asset zone |
 | `supersede-check [--json] [--proposal FILE]` | — | supersession health (A1–A5) and the R1 proposal gate |
+| `import --from PATH [--format NAME] --prefix P [--zone Z] [--write]` | only with `--write` | turn another tool's export into pages — [docs/import.md](docs/import.md) |
 | `push [files…] [--force] [--expect SHA256] [--log [N]] [--allow-undeclared] [--json]` | ✔ | upload proposals (the supersession gate can refuse the batch) |
 | `mcp` | — | run the MCP server on stdio (for agent hosts) |
 
@@ -359,9 +360,25 @@ what each layer needs, where the models come from, and **which of them send page
 text off the machine** (`deep` does; that is the one to leave off if your bundle
 holds anything you would not paste into a chat window).
 
+## Importing from another tool
+
+If the knowledge already exists somewhere else, `import` turns that export into
+pages instead of asking you to copy files by hand:
+
+```bash
+dsh-kb import --from ~/notes/obsidian --format obsidian --prefix notes        # dry run
+dsh-kb import --from ~/notes/obsidian --format obsidian --prefix notes --write
+dsh-kb refresh
+```
+
+Adapters for `mem0`, Obsidian, Notion's Markdown export, basic-memory, plain
+JSON/JSONL and dsh-kb's own `records/v1`. It is additive (never deletes),
+deterministic (a second run is a no-op), and refuses to write into `z0-public`
+without `--allow-public`. See [docs/import.md](docs/import.md).
+
 ## Status
 
-Alpha (0.2.0) with 327 tests (unit, end-to-end, transport, CLI smoke and MCP — all offline):
+Alpha (0.3.0) with 370 tests (unit, end-to-end, transport, CLI smoke and MCP — all offline):
 
 ```bash
 python3 -m unittest discover -s tests -t . -v

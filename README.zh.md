@@ -166,6 +166,7 @@ dsh-kb push                        # 把本地 _incoming/ 的提案推上去
 | `read <path> [--start] [--lines] [--json]` | — | 行窗口 |
 | `skills search\|show\|stats` | — | 查 `z3-skills` 资产区里的 skill 总库 |
 | `supersede-check [--json] [--proposal FILE]` | — | 取代关系体检（A1–A5）与 R1 提案闸门 |
+| `import --from PATH [--format NAME] --prefix P [--zone Z] [--write]` | 仅 `--write` | 把别的工具的导出变成页面 —— 见 [docs/import.md](docs/import.md) |
 | `push [files…] [--force] [--expect SHA256] [--log [N]] [--allow-undeclared] [--json]` | ✔ | 上传 `_incoming/` 提案（可能被取代闸门整批拦下） |
 | `mcp` | — | 在 stdio 上跑 MCP 服务器（给 agent 宿主用） |
 
@@ -345,9 +346,23 @@ dsh-kb mcp            # 在 stdin/stdout 上讲 JSON-RPC，暴露 search / read 
 模型从哪来，以及**哪一层会把页面正文发到机器外**（是 `deep`；如果你的库里
 有"不愿粘进聊天框"的内容，就别开它）。
 
+## 从别的工具导入
+
+知识已经在别处时，`import` 把那份导出变成页面，而不是让你手工拷文件：
+
+```bash
+dsh-kb import --from ~/notes/obsidian --format obsidian --prefix notes        # 只看会改什么
+dsh-kb import --from ~/notes/obsidian --format obsidian --prefix notes --write
+dsh-kb refresh
+```
+
+适配 `mem0`、Obsidian、Notion 的 Markdown 导出、basic-memory、通用 JSON/JSONL，
+以及 dsh-kb 自己的 `records/v1`。只增不删、确定性（再跑一次是空操作）、
+没 `--allow-public` 就拒绝写 `z0-public`。详见 [docs/import.md](docs/import.md)。
+
 ## 状态
 
-Alpha（0.2.0），已有 327 个测试（单元 + 端到端 + 传输层 + CLI 冒烟 + MCP，全部离线可跑）：
+Alpha（0.3.0），已有 370 个测试（单元 + 端到端 + 传输层 + CLI 冒烟 + MCP，全部离线可跑）：
 
 ```bash
 python3 -m unittest discover -s tests -t . -v

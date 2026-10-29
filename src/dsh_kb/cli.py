@@ -32,6 +32,7 @@ Command overview (the full flag list lives in ``--help``)::
     read        <path> [--start N] [--lines N]
     skills      search|show|stats
     push        [files…] [--force] [--expect SHA256] [--log [N]] [--json]
+    import      --from PATH [--format NAME] --prefix PREFIX [--zone Z] [--write]
     mcp
 """
 from __future__ import annotations
@@ -1272,6 +1273,74 @@ def _emit_prune_refusal(prune: dict) -> None:
     print(f"     解锁：{PRUNE_UNLOCK.get(prune['reason'], '见上面的原因')}")
 
 
+def cmd_import(args) -> int:
+    """Import records from another tool into the bundle (dry-run by default).
+
+    Reads one export through an adapter, renders pages, then compares them with
+    what the source already holds.  Writing needs ``--write``; nothing here ever
+    deletes, because a generated view that can delete is a loaded gun.
+    """
+    from . import importer as importer_mod
+    from .importers import load as load_records
+
+    cfg = _config(args)
+    at = datetime.now().astimezone().isoformat(timespec="seconds")
+    generator = f"dsh-kb import/{args.format}"
+    try:
+        records = load_records(args.format, Path(args.source_path), wikilinks=args.wikilinks)
+        planned = importer_mod.plan(
+            cfg, records,
+            prefix=args.prefix, zone=args.zone, group_by=args.group_by,
+            title_prefix=args.title_prefix or "", generator=generator,
+            resource=str(Path(args.source_path).resolve()), at=at,
+            max_page_bytes=args.max_page_bytes, allow_public=args.allow_public,
+        )
+    except ValueError as exc:
+        if args.json:
+            print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
+        else:
+            _emit(f"dsh-kb: {exc}")
+        return 1
+
+    try:
+        source = open_configured_source(cfg)
+        outcome = importer_mod.apply(source, planned, write=bool(args.write))
+    except Exception as exc:                      # noqa: BLE001 - report, do not traceback
+        if args.json:
+            print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                             ensure_ascii=False, indent=2))
+        else:
+            _emit(f"dsh-kb: 源不可用或写入失败：{exc}")
+        return 11
+
+    payload = {
+        "ok": outcome.failed == 0,
+        "format": args.format,
+        "source": str(Path(args.source_path).resolve()),
+        "prefix": planned.prefix,
+        "zone": planned.zone,
+        "records": planned.items,
+        "pages": len(planned.pages),
+        "new": outcome.new, "changed": outcome.changed,
+        "same": outcome.same, "failed": outcome.failed,
+        "written": outcome.written,
+        "dry_run": not args.write,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        mode = "dry-run（加 --write 才真写）" if not args.write else f"已写入 {outcome.written} 页"
+        print(f"import · {args.format} → {planned.zone}/{planned.prefix}")
+        print(f"  records : {planned.items}")
+        print(f"  pages   : {len(planned.pages)}  "
+              f"(new {outcome.new} · changed {outcome.changed} · same {outcome.same}"
+              + (f" · failed {outcome.failed}" if outcome.failed else "") + ")")
+        print(f"  mode    : {mode}")
+        if args.write and outcome.written:
+            print("  next    : dsh-kb refresh   # mirror + index the new pages")
+    return 0 if outcome.failed == 0 else 10
+
+
 def cmd_rag_check(args) -> int:
     """向量库 ↔ 索引一致性：默认只报告（dry-run），``--prune`` 才真删孤儿行。
 
@@ -1426,6 +1495,32 @@ def build_parser() -> argparse.ArgumentParser:
                    help="run the proposal gate (R1) on this draft: a title collision with a live "
                         "page and no declaration is reported as must_declare")
     p.set_defaults(func=cmd_supersede_check)
+
+    from .importers import names as _adapter_names
+
+    p = command("import", "import records from another tool into the bundle "
+                          "(dry-run unless --write)")
+    p.add_argument("--from", dest="source_path", required=True, metavar="PATH",
+                   help="the export to read (a file or a directory, depending on --format)")
+    p.add_argument("--format", default="records", choices=_adapter_names(), metavar="NAME",
+                   help="input format: " + ", ".join(_adapter_names()))
+    p.add_argument("--prefix", required=True, metavar="PREFIX",
+                   help="directory inside the bundle, e.g. memory or notes/imported")
+    p.add_argument("--zone", default="z1-restricted", metavar="ZONE",
+                   help="privacy zone to write into (default z1-restricted)")
+    p.add_argument("--group-by", default="first-tag", metavar="KEY",
+                   help="first-tag (default) | none | field:<record attribute>")
+    p.add_argument("--title-prefix", default="", metavar="TEXT",
+                   help="prefix for the generated page titles")
+    p.add_argument("--wikilinks", choices=("strip", "keep"), default="strip",
+                   help="reduce [[wikilinks]] to their label (default) or keep them verbatim")
+    p.add_argument("--allow-public", action="store_true",
+                   help="permit writing into a z0 zone (refused by default)")
+    p.add_argument("--max-page-bytes", type=int, default=2_000_000, metavar="N",
+                   help="refuse to render a page larger than this (default 2000000)")
+    p.add_argument("--write", action="store_true",
+                   help="actually write; without it the command only reports")
+    p.set_defaults(func=cmd_import)
 
     p = command("sync", "refresh the mirror from the source")
     p.add_argument("--prune", action="store_true", help="delete local files that vanished remotely")

@@ -4,6 +4,32 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-10-29
+
+### Added
+
+- **`dsh-kb import`**: turn another tool's export into pages inside the bundle.
+  Dry-run by default, deterministic, additive (it never deletes), and guarded —
+  a zone must be named, `z0-public` needs `--allow-public`, and a target that the
+  `never` list excludes aborts the whole run instead of silently skipping files.
+  Documented in [docs/import.md](docs/import.md).
+- **Six adapters**, each one module under `dsh_kb/importers/`: `records` (the
+  neutral `records/v1` JSON), `jsonl`, `mem0`, `obsidian`, `notion` (Markdown &
+  CSV export, page ids stripped from file names) and `basic-memory` (observations
+  become records; a page without observations imports whole).  Adding another is
+  one module plus one table entry.
+- `--group-by first-tag|none|field:<attribute>`, `--title-prefix`,
+  `--wikilinks strip|keep`, `--max-page-bytes`.  Re-importing the same input is a
+  no-op; pages are compared byte for byte and only differences are written.
+- 31 new tests (370 total).
+
+### Notes
+
+- Slugs are case-folded because the bundle is served to Windows over UNC, where
+  `Docker.md` and `docker.md` are the same file.
+- The adapters read with the standard library only — `import dsh_kb` still pulls
+  in no third-party code, and the optional-arm test keeps it that way.
+
 ## [0.2.2] — 2026-10-29
 
 ### Added
