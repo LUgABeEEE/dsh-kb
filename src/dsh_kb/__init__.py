@@ -11,6 +11,6 @@ Nothing in this package assumes a particular vendor or path: everything
 machine-specific lives in a config file outside the checkout.
 """
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 __all__ = ["__version__"]

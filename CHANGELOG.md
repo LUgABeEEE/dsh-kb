@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] — 2026-10-30
+
+### Fixed
+
+- **Two groups whose names slugify to the same file no longer overwrite each
+  other.** Found in a real import of 2 972 memory records: `【常守规则` and
+  `常守规则` both produced `常守规则.md`, so the second page silently replaced the
+  first — two records never reached the knowledge base — and every re-import
+  reported four changed pages because the two groups kept rewriting each other.
+  A colliding group now gets a short hash of its full name appended
+  (`常守规则-a1b2c3.md`), which is stable across runs.
+
 ## [0.3.2] — 2026-10-29
 
 ### Fixed

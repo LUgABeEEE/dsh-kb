@@ -101,6 +101,22 @@ class TestPlan(unittest.TestCase):
         self.assertEqual([p.rel for p in plan.pages],
                          ["memory/decision.md", "memory/fact.md"])
 
+    def test_colliding_group_names_do_not_overwrite_each_other(self):
+        """`【常守规则` and `常守规则` slugify identically — both must survive."""
+        recs = [Record(content="a", tags=("【常守规则",)),
+                Record(content="b", tags=("常守规则",))]
+        plan = self._plan(recs)
+        rels = sorted(p.rel for p in plan.pages)
+        self.assertEqual(len(rels), 2, "two groups must produce two pages")
+        self.assertEqual(len(set(rels)), 2, "the two paths must differ")
+
+    def test_collision_paths_are_stable_across_runs(self):
+        recs = [Record(content="a", tags=("【常守规则",)),
+                Record(content="b", tags=("常守规则",))]
+        first = sorted(p.rel for p in self._plan(recs).pages)
+        second = sorted(p.rel for p in self._plan(list(reversed(recs))).pages)
+        self.assertEqual(first, second)
+
     def test_a_public_zone_needs_an_explicit_opt_in(self):
         with self.assertRaises(ValueError) as ctx:
             self._plan(records(Record(content="a")), zone="z0-public")

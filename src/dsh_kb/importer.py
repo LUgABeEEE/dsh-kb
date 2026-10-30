@@ -19,6 +19,7 @@ Guarantees, in order of how much they matter:
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -81,6 +82,21 @@ def slug(text: str, limit: int = 48) -> str:
         if cleaned.endswith(suffix) and len(cleaned) > len(suffix):
             cleaned = cleaned[: -len(suffix)]
     return (cleaned[:limit].rstrip("-.")) or "page"
+
+
+def _disambiguate(base: str, group: str, taken: dict[str, str]) -> str:
+    """Keep two different groups from landing on the same file.
+
+    Titles collide in practice: `【常守规则` and `常守规则` slugify to the same
+    stem, and without this the second page silently overwrote the first — two
+    records lost, and the import reported `changed` on every run because the two
+    groups kept rewriting each other.  A short hash of the *group* (not the
+    slug) keeps the path stable across runs.
+    """
+    if base not in taken or taken[base] == group:
+        return base
+    digest = hashlib.sha1(group.encode("utf-8")).hexdigest()[:6]
+    return f"{base}-{digest}"
 
 
 def _group_of(record: Record, group_by: str) -> str:
@@ -193,8 +209,11 @@ def plan(cfg: Config, records: list[Record], *, prefix: str, zone: str,
 
     pages: list[Page] = []
     blocked: list[str] = []
+    taken: dict[str, str] = {}
     for group, group_records in sorted(buckets.items()):
-        rel = f"{prefix}/{slug(group)}.md" if prefix else f"{slug(group)}.md"
+        stem = _disambiguate(slug(group), group, taken)
+        taken.setdefault(stem, group)
+        rel = f"{prefix}/{stem}.md" if prefix else f"{stem}.md"
         if cfg.is_never(rel):
             blocked.append(rel)
             continue
