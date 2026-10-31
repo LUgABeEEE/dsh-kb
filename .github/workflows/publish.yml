@@ -36,10 +36,10 @@ jobs:
           python -m pip install --quiet --upgrade build twine
           python -m build
           python -m twine check dist/*
-      - name: The wheel must install with no dependencies and run
+      - name: The wheel must install, resolve its one dependency, and run
         run: |
           python -m venv /tmp/verify
-          /tmp/verify/bin/pip install --quiet --no-index dist/*.whl
+          /tmp/verify/bin/pip install --quiet dist/*.whl
           /tmp/verify/bin/dsh-kb --version
           /tmp/verify/bin/dsh-kb --help > /dev/null
           /tmp/verify/bin/python -c "import dsh_kb; print('import ok', dsh_kb.__version__)"
