@@ -69,7 +69,8 @@ growing the knowledge base does not make each lookup more expensive.
 | 2 | **The index is local and never on the share** | SQLite's locking is not reliable on network filesystems; the index is a disposable derivative that can always be rebuilt |
 | 3 | **Privacy zones compiled into code** | A sensitive zone is **not even copied to disk**, is not indexed, and is not returned by a default query — three layers, no conventions required |
 | 4 | **Proposal-based writes** | An agent only writes to `_incoming/`; promotion is done by a human or a scheduled job — this prevents "a dozen contradictory near-duplicates about one topic" |
-| 5 | **Precision first, recall second** | A query starts as a strict `AND`; only when that is empty does it relax to `OR`, and then **generic terms are dropped first** — otherwise a single shared word such as `UNIQ` drags in unrelated documents |
+| 5 | **Say how sure it is, and rescue weak queries** | Every result carries a confidence band from a cross-encoder; when the first pass was weak, an extra stage (`synonyms` → local model rewrite) tries other phrasings instead of returning nothing. All of it is opt-in, cached, and can only **add** hits — it never displaces what the lexical pass found |
+| 6 | **Precision first, recall second** | A query starts as a strict `AND`; only when that is empty does it relax to `OR`, and then **generic terms are dropped first** — otherwise a single shared word such as `UNIQ` drags in unrelated documents |
 
 Rationale and measurements: [docs/design.md](docs/design.md).
 
@@ -279,6 +280,33 @@ export DSH_KB_WEBDAV_CONNECT=192.0.2.10      # connect to an IP, verify TLS agai
   token hits — so searching `mount -a` reports that line, not the line holding
   `/proc/mounts`.
 
+### When a query is weak
+
+A search that finds little does not just return little. Each result carries a
+**confidence band** — a cross-encoder scores the top three pages and the verdict
+comes back as `high` / `medium` / `low` with a `hint` telling the caller how much
+to hedge. It is a *soft* signal: it never filters hits, because a hard threshold
+had to trade "reject 82% of out-of-domain" against "drop 24% of answerable", and
+that is a bad trade for a tool meant to be consulted on demand.
+
+If the band is low or nothing matched, two optional stages run in order:
+
+| Stage | Cost | What it does |
+|---|---|---|
+| synonym expansion (`DSH_KB_DICT=1` + a table) | milliseconds, no model | substitute the word the user typed for the word the corpus uses |
+| query rewriting | one local model call, cached per query | ask a model for other phrasings, then merge |
+
+Both **fill empty slots only** (`DSH_KB_MERGE=fill`, the default) — a variant can
+never push out a hit the original query found. Pure reciprocal-rank fusion was
+measured too: on a 50-question gold set it dropped page@5 from 0.580 to 0.440,
+which is why `fill` is the default and `top2` is opt-in.
+
+**Identifiers are never rewritten.** `UNIQ-…`, `page-000123.md`, `errno2` are
+matched exactly or not at all: rewriting one turns it into generic prose, and
+generic prose matches unrelated pages, so a lookup that should return nothing
+starts returning noise. A one-token query carrying a digit or a separator skips
+the expansion stage entirely.
+
 ---
 
 ## Measured performance
@@ -381,7 +409,7 @@ without `--allow-public`. See [docs/import.md](docs/import.md).
 
 ## Status
 
-Alpha (0.3.0) with 370 tests (unit, end-to-end, transport, CLI smoke and MCP — all offline):
+Alpha (0.5.0) with 321 tests (unit, end-to-end, transport, CLI smoke and MCP — all offline):
 
 ```bash
 python3 -m unittest discover -s tests -t . -v
