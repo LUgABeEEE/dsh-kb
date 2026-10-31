@@ -23,7 +23,7 @@ Command overview (the full flag list lives in ``--help``)::
     status
     doctor
     diff        [--incoming-days DAYS] [--json]
-    rag-check   [--prune] [--force]
+    rag-check   [--prune] [--prune-chunks] [--force]
     supersede-check [--json] [--proposal FILE]
     sync        [--prune] [--full] [--dry-run]
     index
@@ -1237,6 +1237,24 @@ def _emit_rag_check(payload: dict) -> None:
         print(f"  → 已删 {prune['removed']} 行孤儿，保留 {prune['kept']} 行")
     if prune["bypassed"]:
         print(f"  ! --force 越过了保护：{', '.join(prune['bypassed'])}（请确认这是同一个知识库）")
+
+    # 块级换代残留（重分块后旧 chunk 的向量）：页级 prune 管不到，单独一段。
+    chunks = payload.get("prune_chunks")
+    if chunks and (chunks["refused"] or chunks["removed"]):
+        if chunks["refused"]:
+            print(f"  !! 块级清理拒绝执行（refused={chunks['reason']}）")
+            print(f"     原因：{chunks['note']}")
+            print(f"     解锁：{PRUNE_UNLOCK.get(chunks['reason'], '见上面的原因')}")
+        elif chunks["dry_run"]:
+            print(f"  → 块级 dry-run：待删 {chunks['removed']} 行换代残留"
+                  f"（数据库未改动，仅 {chunks['identity']} 口径），保留 {chunks['kept']} 行")
+            print("     确认后加 --prune-chunks 真删")
+        else:
+            print(f"  → 已删 {chunks['removed']} 行换代残留（{chunks['identity']} 口径），"
+                  f"保留 {chunks['kept']} 行")
+        if chunks["bypassed"]:
+            print(f"  ! --force 越过了保护：{', '.join(chunks['bypassed'])}")
+
     print(f"  结论：{payload['note']}")
     if prune["refused"]:
         print("  退出码 11（拒绝执行：一行都没删）")
@@ -1255,6 +1273,9 @@ PRUNE_UNLOCK = {
         "先 `dsh-kb index` 建出索引；确认无误后也可以带 --force",
     ragcheck.REFUSED_INDEX:
         "先 `dsh-kb index` 重建索引（索引读不出来时没有任何可比对的对照面）",
+    ragcheck.REFUSED_IDENTITY:
+        "两侧块身份不一致（一侧还是 (path, startline)，另一侧已是 chunk_id）；"
+        "先完成 CAS 迁移重建向量库，再重试 —— 跨身份比对会把每一行都判成孤儿",
 }
 
 
@@ -1364,6 +1385,11 @@ def cmd_rag_check(args) -> int:
     ``--prune`` 只清理"整页都不在了"的行；页面还在、只是少了几块的**块级孤儿
     它删不掉**，那要靠重新嵌入（note 里给了建议）。
 
+    与之相对的是**换代残留**：同一页被重新分块后，新块各自嵌入、旧块的 chunk_id
+    不再出现在索引里，那些向量行既没人读、也永远不会被页级 prune 碰到（页面确实
+    还在）。``--prune-chunks`` 干这件事，它认的身份与 ``check`` 完全一致（两侧都是
+    chunk_id 才动手，混用直接拒绝）；三道防线照旧；不带该开关时只做 dry-run 预估。
+
     ``--force`` 只用于越过"大批量删除"与"空索引"两道保护；**归属校验**（向量库
     必须在 home 之下）只能靠 ``rag.allow_external_vectors_db=true`` 显式放行 ——
     2026-10-19 的事故（临时 home + 默认生产向量库 → 删掉 5,521 行）就是这么发生的。
@@ -1371,7 +1397,7 @@ def cmd_rag_check(args) -> int:
     退出码四档：
 
     * ``0``  一致；
-    * ``1``  **用法错误**：``--force`` 没有搭配 ``--prune``（它单独存在什么也
+    * ``1``  **用法错误**：``--force`` 没有搭配 ``--prune`` / ``--prune-chunks``（它单独存在什么也
       不强制，所以拒绝执行 —— 保持 1 而不是并进 10/11：那是"命令敲错了"，
       不是"库有问题"）；
     * ``10`` 有需要注意（缺失/损坏/页级或块级 missing/orphan/模型维度不符）；
@@ -1379,16 +1405,22 @@ def cmd_rag_check(args) -> int:
       读不出来）。
     """
     cfg = _config(args)
-    if args.force and not args.prune:
+    if args.force and not (args.prune or args.prune_chunks):
         # --force 只影响"真删"；单独用它说明调用方以为自己能强制什么，其实什么都没发生。
-        _emit("dsh-kb: --force 只在 --prune 时有意义（它解的是大批量/空索引两道保护）")
+        _emit("dsh-kb: --force 只在 --prune / --prune-chunks 时有意义"
+              "（它解的是大批量/空索引两道保护）")
         return 1
     try:
         report = ragcheck.check(cfg)
         # 默认也走 prune(dry_run=True)：只读，但能给出"待删几行"的准确预估，
         # 并把三条防线（归属 / 空索引 / 大批量）的判定一并带出来。
         prune_result = ragcheck.prune(cfg, dry_run=not args.prune, force=args.force)
-        if args.prune and prune_result["removed"]:
+        # 块级换代残留：与页级 prune 分开跑，因为它认的是 chunk 身份而不是页。
+        # 没带 --prune-chunks 时只做 dry-run 预估（只读），带才真删。
+        chunk_result = ragcheck.prune_chunks(
+            cfg, dry_run=not args.prune_chunks, force=args.force)
+        if (args.prune and prune_result["removed"]) or (
+                args.prune_chunks and chunk_result["removed"]):
             # 真删过就再取一次状态：输出的是"现在的样子"，删了多少另由 prune 说明。
             report = ragcheck.check(cfg)
     except Exception as exc:  # noqa: BLE001 - 诊断命令不该以 traceback 收场
@@ -1398,7 +1430,11 @@ def cmd_rag_check(args) -> int:
     vectors_path = ragcheck.vectors_db(cfg)
     store_missing = not vectors_path.is_file()
     refused = bool(prune_result["refused"])
-    hard_failure = refused or not prune_result["ok"]
+    # 块级拒绝只有在明确要求 --prune-chunks 时才算硬失败：身份不一致的旧库上
+    # check 仍然有价值，不该因为"没让删"就整体退出 11。
+    chunk_refused = bool(chunk_result["refused"]) and bool(args.prune_chunks)
+    hard_failure = (refused or not prune_result["ok"] or chunk_refused
+                    or (bool(args.prune_chunks) and not chunk_result["ok"]))
     payload = dict(report)
     payload.update({
         "ok": bool(report["ok"]) and not store_missing and not hard_failure,
@@ -1416,6 +1452,14 @@ def cmd_rag_check(args) -> int:
             "label": ("refused" if refused
                       else "no-orphans" if not prune_result["removed"]
                       else "removed" if not prune_result["dry_run"]
+                      else "would remove"),
+        },
+        "prune_chunks": {
+            **chunk_result,
+            "requested": bool(args.prune_chunks),
+            "label": ("refused" if chunk_result["refused"]
+                      else "no-orphans" if not chunk_result["removed"]
+                      else "removed" if not chunk_result["dry_run"]
                       else "would remove"),
         },
     })
@@ -1486,8 +1530,11 @@ def build_parser() -> argparse.ArgumentParser:
                 "(report; --prune deletes orphan pages)")
     p.add_argument("--prune", action="store_true",
                    help="really delete orphan vector rows (default: report only, dry-run)")
+    p.add_argument("--prune-chunks", action="store_true",
+                   help="really delete vector rows whose chunk is no longer in the index "
+                        "(re-chunking residue; default: report only, dry-run)")
     p.add_argument("--force", action="store_true",
-                   help="with --prune: override the bulk-delete and empty-index guards "
+                   help="with --prune/--prune-chunks: override the bulk-delete and empty-index guards "
                         "(the ownership guard still needs rag.allow_external_vectors_db=true)")
     p.set_defaults(func=cmd_rag_check)
 

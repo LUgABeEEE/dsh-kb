@@ -4,6 +4,36 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-11-01
+
+### Added
+
+- **`rag-check --prune-chunks`** — delete vector rows whose *chunk* is no longer
+  in the index. Page-level `--prune` deliberately refuses to touch a page that
+  still exists, which is right for a removed or renamed page but is the wrong
+  knife for **re-chunking residue**: when the same page is split differently,
+  every new chunk is embedded under a fresh `chunk_id` while the old rows stay
+  behind forever. Retrieval never reads them, so the only symptom is drift — the
+  deployment that motivated this measured 1,137 such rows after a mirror re-push,
+  with `chunks_missing` at 0, meaning no amount of re-embedding would move them.
+
+  It keys off the **same identity `check` uses** (`chunk_id` when both sides
+  carry it, positional `(path, startline)` only on a pre-CAS pair) and refuses a
+  mixed pair outright: subtracting across identities marks every row as an
+  orphan, and a maintenance command that deletes everything because it could not
+  compare is worse than one that says it cannot. The three existing guards
+  (ownership, empty index, bulk delete) apply unchanged, and without the flag it
+  is a read-only dry run.
+
+  This exists in a long-running deployment and had never been committed; the
+  scheduled job that calls it started failing with `unrecognized arguments`
+  the first night after a version bump, which is how it was found.
+
+### Fixed
+
+- `REFUSED_IDENTITY` was missing from the published `ragcheck` constants, so a
+  caller could not tell an identity refusal apart from any other.
+
 ## [0.5.0] — 2026-10-31
 
 ### Added

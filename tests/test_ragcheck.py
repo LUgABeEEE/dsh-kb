@@ -903,6 +903,115 @@ class TestCasSchema(RagFixture):
         json.dumps(report)
 
 
+
+
+class TestPruneChunks(TestCasSchema):
+    """Re-chunking residue: rows whose *chunk* is gone while the page stays.
+
+    Page-level :func:`prune` cannot reach these — it only touches a page that no
+    longer exists, and here the page exists with new chunks.  Measured on the
+    real deployment 2026-10-28: 1,137 such rows after a mirror re-push, with
+    ``chunks_missing`` at 0, so no amount of re-embedding would shift them.
+    """
+
+    def _residue_pair(self, paths=("z0-public/alpha.md",)):
+        """A CAS pair plus rows left over from an older chunking of ``paths``.
+
+        Both residue rows sit on the same page on purpose: spreading them over
+        two of three pages trips the bulk-delete guard on the *path* ratio
+        (67%), which is a different behaviour with its own test below.
+        """
+        self._write_cas_index()
+        self._write_cas_vectors([self._cas_row(*row) for row in self.CAS_INDEX])
+        con = sqlite3.connect(self.vdb)
+        try:
+            with con:
+                n = 0
+                for path in paths:
+                    for line in (1, 16):
+                        n += 1
+                        con.execute(
+                            "insert into vectors(chunk_id, model, dim, path, startline,"
+                            " text, vec, updated) values (?,?,?,?,?,?,?,?)",
+                            (f"{9 - n}" * 16, DEFAULT_RAG_MODEL, DEFAULT_RAG_DIM,
+                             path, line, "old chunking", _blob(), 1_700_000_000))
+        finally:
+            con.close()
+
+    def test_page_prune_cannot_see_the_residue(self):
+        """The reason this function exists: the page-level knife misses it."""
+        self._residue_pair()
+        self.assertEqual(ragcheck.prune(self.cfg, dry_run=True)["removed"], 0,
+                         "page-level prune must find nothing here")
+
+    def test_dry_run_counts_but_deletes_nothing(self):
+        self._residue_pair()
+        result = ragcheck.prune_chunks(self.cfg, dry_run=True)
+        self.assertEqual(result["removed"], 2)
+        self.assertEqual(result["level"], "chunk")
+        self.assertEqual(result["identity"], ragcheck.CHUNK_ID)
+        with sqlite3.connect(self.vdb) as con:
+            self.assertEqual(con.execute("select count(*) from vectors").fetchone()[0], 7)
+
+    def test_real_prune_removes_exactly_the_residue(self):
+        self._residue_pair()
+        result = ragcheck.prune_chunks(self.cfg, dry_run=False)
+        self.assertTrue(result["ok"], result.get("note"))
+        self.assertEqual(result["removed"], 2)
+        with sqlite3.connect(self.vdb) as con:
+            left = {row[0] for row in con.execute("select chunk_id from vectors")}
+        self.assertEqual(left, {cid for cid, *_ in self.CAS_INDEX},
+                         "the five live chunks must all survive")
+
+    def test_the_bulk_guard_still_applies_by_path(self):
+        """Residue spread over most of the pages is a smell, not routine cleanup.
+
+        The row ratio here is 4/9 = 44%, under the 50% row guard — it is the
+        *path* ratio (2 of 3 pages) that trips it, which is why the guard checks
+        both.
+        """
+        self._residue_pair(paths=("z0-public/alpha.md", "z1-restricted/bravo.md"))
+        result = ragcheck.prune_chunks(self.cfg, dry_run=False)
+        self.assertTrue(result["refused"])
+        self.assertEqual(result["reason"], ragcheck.REFUSED_BULK)
+        with sqlite3.connect(self.vdb) as con:
+            self.assertEqual(con.execute("select count(*) from vectors").fetchone()[0], 9,
+                             "a refused prune must not delete anything")
+
+    def test_force_overrides_the_bulk_guard(self):
+        self._residue_pair(paths=("z0-public/alpha.md", "z1-restricted/bravo.md"))
+        result = ragcheck.prune_chunks(self.cfg, dry_run=False, force=True)
+        self.assertFalse(result["refused"])
+        self.assertEqual(result["removed"], 4)
+        self.assertIn("bulk-delete", result["bypassed"])
+
+    def test_a_mixed_identity_pair_is_refused(self):
+        """CAS index + positional vector store: subtracting would orphan everything."""
+        self._write_cas_index()
+        self._write_vectors_at(self.vdb, [
+            (1, "z0-public/alpha.md", 1, "alpha one", "h1", DEFAULT_RAG_MODEL, _blob()),
+        ])
+        result = ragcheck.prune_chunks(self.cfg, dry_run=False)
+        self.assertTrue(result["refused"])
+        self.assertEqual(result["reason"], ragcheck.REFUSED_IDENTITY)
+        with sqlite3.connect(self.vdb) as con:
+            self.assertEqual(con.execute("select count(*) from vectors").fetchone()[0], 1)
+
+    def test_a_missing_index_is_refused(self):
+        self._residue_pair()
+        self.index_db.unlink()
+        result = ragcheck.prune_chunks(self.cfg, dry_run=True)
+        self.assertTrue(result["refused"])
+        self.assertEqual(result["reason"], ragcheck.REFUSED_INDEX)
+
+    def test_a_missing_vector_store_is_not_a_failure(self):
+        self._write_cas_index()
+        self.vdb.unlink()          # setUp wrote one; "missing store" is the case here
+        result = ragcheck.prune_chunks(self.cfg, dry_run=True)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["refused"])
+        self.assertEqual(result["removed"], 0)
+
 class TestRagConfig(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

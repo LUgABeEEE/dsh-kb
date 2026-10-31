@@ -98,6 +98,7 @@ REFUSED_EXTERNAL = "external-vectors-db"   # 向量库不在 home 之下且未�
 REFUSED_EMPTY_HOME = "empty-home"          # 索引不存在/为空，而向量库非空
 REFUSED_BULK = "bulk-delete"               # 待删比例 > BULK_DELETE_LIMIT 且没带 --force
 REFUSED_INDEX = "index-unreadable"         # 索引读不出来（未知的对照面）
+REFUSED_IDENTITY = "chunk-identity-mismatch"  # 两侧块身份不同/缺失：块级比对是噪音
 FAILED_DELETE = "delete-failed"            # 允许删、但 DELETE 本身失败
 
 
@@ -766,3 +767,162 @@ def _truthy(value) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in _TRUTHY
+
+
+def prune_chunks(cfg: Config, *, dry_run: bool = True, force: bool = False) -> dict:
+    """Delete vector rows whose *chunk* is no longer in the index.
+
+    The page-level :func:`prune` refuses to touch a page that still exists, which
+    is right for the case it was built for (a removed or renamed page).  It is
+    the wrong knife for **re-chunking residue**: when the same page is split
+    differently, every new chunk gets a fresh ``chunk_id`` and is embedded, while
+    the old chunk ids keep their rows forever.  Retrieval never reads them (their
+    key is not in ``meta``), so the only symptom is drift — measured 2026-10-28
+    after a mirror re-push: 1,137 such rows with ``chunks_missing`` at 0.
+
+    Keys off the **same identity ``check`` used**, so the two can never disagree
+    about what a chunk is: ``chunk_id`` when both sides carry it, positional
+    ``(path, startline)`` only on a pre-CAS pair.  A mixed pair — index already
+    CAS, vector store still positional, or either side missing the column — is
+    refused outright: subtracting across identities marks *every* row as an
+    orphan, and a maintenance command that deletes everything because it could
+    not compare is worse than one that says it cannot.
+
+    The three ``prune`` guards apply unchanged (ownership, empty index, bulk
+    delete), plus the identity gate above.  ``kb.sqlite`` is read-only here too.
+
+    Returns the same stable keys as :func:`prune``, with ``level="chunk"`` and the
+    identity that was used in ``identity``.
+    """
+    vdb = vectors_db(cfg)
+    out: dict = {
+        "removed": 0, "kept": 0, "dry_run": bool(dry_run), "force": bool(force),
+        "ok": True, "refused": False, "reason": "", "note": "",
+        "home": str(cfg.home), "vectors_db": str(vdb), "external": False,
+        "total": 0, "orphan_rows": 0, "orphan_paths": 0, "ratio": 0.0,
+        "bypassed": [], "level": "chunk", "identity": "",
+        "orphan_sample": [],
+    }
+    if not vdb.is_file():
+        out["note"] = f"vector store {vdb} is missing — nothing to prune"
+        return out
+
+    try:
+        with closing(_open_ro(vdb)) as con:
+            key_column = _identity_column(con, "vectors")
+            rows = con.execute(
+                f"select {key_column}, path, startline from vectors").fetchall()
+            vec_chunks, vec_identity = _chunks(con, "vectors")
+            vec_labels = _chunk_labels(con, "vectors")
+    except sqlite3.Error as exc:
+        out["note"] = f"vector store {vdb} is unusable ({exc}) — nothing to prune"
+        return out
+
+    total_rows = len(rows)
+    total_paths = len({path for _k, path, _s in rows})
+    out["total"] = total_rows
+
+    meta_paths, index_rows = _index_side(cfg)
+    meta_chunks, meta_identity = None, None
+    if meta_paths is not None:
+        try:
+            with closing(_open_ro(cfg.index_db)) as con:
+                meta_chunks, meta_identity = _chunks(con, "meta")
+        except sqlite3.Error as exc:
+            out["note"] = f"index {cfg.index_db} is unusable ({exc}) — nothing to prune"
+            return out
+
+    def refuse(reason: str, note: str) -> dict:
+        out.update(ok=False, refused=True, reason=reason, note=note)
+        if not dry_run:
+            out["kept"] = total_rows
+        return out
+
+    if meta_paths is None:
+        return refuse(REFUSED_INDEX, (
+            f"refusing to prune chunks: index {cfg.index_db} is missing or unreadable — "
+            f"with an unknown index side every vector row looks like an orphan; "
+            f"build the index first (`dsh-kb index`)"))
+
+    # ---- 身份门：两侧必须用同一个块身份，否则集合差全是噪音 ----
+    if meta_chunks is None or vec_chunks is None or meta_identity != vec_identity:
+        detail = (f"index: {meta_identity or 'none'}, "
+                  f"vector store: {vec_identity or 'none'}")
+        out["identity"] = detail
+        return refuse(REFUSED_IDENTITY, (
+            f"refusing to prune chunks: the two sides do not share a chunk identity "
+            f"({detail}) — subtracting across identities would mark every row as an "
+            f"orphan; finish the CAS migration (rebuild the vectors) and retry"))
+    out["identity"] = meta_identity
+
+    # 两侧身份已在上面的身份门确认一致，这里按同一口径比对：
+    # CAS 侧块身份是 chunk_id 标量；旧侧是 (path, startline) 元组。
+    if meta_identity == CHUNK_ID:
+        stale = [(key, path) for key, path, _line in rows if key not in meta_chunks]
+    else:
+        stale = [(key, path) for key, path, line in rows
+                 if (path, line) not in meta_chunks]
+    doomed = [key for key, _path in stale]
+    orphan_rows = len(doomed)
+    orphan_paths = len({path for _key, path in stale})
+    out["orphan_rows"] = orphan_rows
+    out["orphan_paths"] = orphan_paths
+    out["ratio"] = (orphan_rows / total_rows) if total_rows else 0.0
+    path_ratio = (orphan_paths / total_paths) if total_paths else 0.0
+
+    # ---- 防线 1：归属校验（--force 不越过）----
+    out["external"] = not _within(vdb, cfg.home)
+    if out["external"] and not _allow_external_vectors_db(cfg):
+        return refuse(REFUSED_EXTERNAL, (
+            f"refusing to prune: vectors_db {vdb} is outside home {cfg.home} — "
+            f"prune compares the vector store against *this* home's index, so a "
+            f"store from another knowledge base looks entirely orphaned; point "
+            f"DSH_KB_RAG_VECTORS_DB at a store inside home, or set "
+            f"rag.allow_external_vectors_db=true if the split is intentional"))
+
+    # ---- 防线 2：空 home ----
+    if index_rows == 0 and total_rows > 0:
+        if not force:
+            return refuse(REFUSED_EMPTY_HOME, (
+                f"refusing to prune: index {cfg.index_db} has no chunks while {vdb} "
+                f"has {total_rows} vector row(s) — an empty index side would delete "
+                f"all of them; build the index first (`dsh-kb index`), or pass "
+                f"--force if this really is the same knowledge base"))
+        out["bypassed"].append(REFUSED_EMPTY_HOME)
+
+    # ---- 防线 3：大批量删除 ----
+    if out["ratio"] > BULK_DELETE_LIMIT or path_ratio > BULK_DELETE_LIMIT:
+        if not force:
+            return refuse(REFUSED_BULK, (
+                f"refusing to prune chunks: {orphan_rows}/{total_rows} row(s) "
+                f"({out['ratio']:.0%}) and {orphan_paths}/{total_paths} path(s) "
+                f"({path_ratio:.0%}) would be deleted — more than "
+                f"{BULK_DELETE_LIMIT:.0%}; 疑似刚重分块（换代）或 home 与 vectors_db "
+                f"不属于同一知识库 (home={cfg.home}, vectors_db={vdb}); "
+                f"pass --force if you really mean it"))
+        out["bypassed"].append(REFUSED_BULK)
+
+    if not dry_run and doomed:
+        try:
+            with closing(sqlite3.connect(vdb)) as con:
+                con.executemany(
+                    f"delete from vectors where {key_column} = ?", [(k,) for k in doomed])
+                con.commit()
+        except sqlite3.Error as exc:
+            out.update(ok=False, reason=FAILED_DELETE,
+                       note=f"delete failed on {vdb}: {exc}")
+            return out
+
+    out["removed"] = orphan_rows
+    out["kept"] = total_rows - orphan_rows
+    out["orphan_sample"] = [
+        _format_chunk(key, vec_labels) for key in
+        sorted(doomed, key=lambda k: str(k))[:SAMPLE_LIMIT]]
+    if orphan_rows:
+        out["note"] = (
+            f"{'would delete' if dry_run else 'deleted'} {orphan_rows} stale chunk "
+            f"vector row(s) of {total_rows} in {vdb} (identity: {meta_identity})"
+            + (f" (forced past: {', '.join(out['bypassed'])})" if out["bypassed"] else ""))
+    else:
+        out["note"] = f"no stale chunk vectors in {vdb} — nothing to delete"
+    return out
