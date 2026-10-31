@@ -6,7 +6,6 @@ offline.**
 
 [![CI](https://github.com/LUgABeEEE/dsh-kb/actions/workflows/ci.yml/badge.svg)](https://github.com/LUgABeEEE/dsh-kb/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/dsh-kb.svg)](https://pypi.org/project/dsh-kb/)
-[![M8ven Score](https://m8ven.ai/badge/mcp/lugabeeee-dsh-kb-1rwx47?variant=verified)](https://m8ven.ai/mcp/lugabeeee-dsh-kb-1rwx47?s=readme)
 [![Python](https://img.shields.io/pypi/pyversions/dsh-kb.svg)](https://pypi.org/project/dsh-kb/)
 
 English | [中文](README.zh.md)
@@ -418,20 +417,6 @@ python3 -m unittest discover -s tests -t . -v
 
 With the official MCP SDK installed, one extra **interop test** runs (a real
 client against this hand-rolled server); otherwise it skips.
-
-## Independent score
-
-[![M8ven Score](https://m8ven.ai/badge/mcp/lugabeeee-dsh-kb-1rwx47?variant=verified)](https://m8ven.ai/mcp/lugabeeee-dsh-kb-1rwx47?s=readme)
-
-Listed on the [M8ven Trust Index](https://m8ven.ai/mcp/lugabeeee-dsh-kb-1rwx47):
-**grade C \u2014 "Emerging"**, which their rubric caps for projects without adoption
-yet. Their own wording: *"The grade is capped by reputation, not by any finding.
-Not a warning."* No security finding is listed against this repository. The scan
-covers commit `35e2721` (0.3.3), so it lags behind the current release.
-
-The badge above uses M8ven's `variant=verified` form, which reads "independently
-scored" instead of repeating a letter grade that reflects adoption rather than
-code \u2014 the number is one click away.
 
 ## Roadmap
 
