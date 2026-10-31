@@ -4,6 +4,52 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-10-31
+
+### Added
+
+- **Query expansion, confidence scoring and result merging** (`dsh_kb.expansion`),
+  ported from a long-running deployment where they had never been committed.
+  Search now reports *how much to trust* a result and, when a query is weak,
+  spends a little more work instead of returning nothing:
+  - **confidence** — a cross-encoder score on the top three pages, banded into
+    `high` / `medium` / `low`, plus a `hint`.  A soft signal only: it never
+    filters hits, because a hard threshold had to trade "reject 82% of
+    out-of-domain" against "drop 24% of answerable".
+  - **synonym expansion** — an optional domain dictionary maps the word the user
+    typed onto the word the corpus uses.  Zero model calls, milliseconds.  Off
+    unless `DSH_KB_DICT=1` and a table exists.
+  - **query rewriting** — a local model rewrites a weak query into other
+    phrasings, cached by query so a repeat costs nothing.  Any failure is an
+    empty list; a search is never blocked by an unreachable model.
+  - **page rerank** — score a candidate page by its best passage, which recovers
+    pages whose relevant part is not the snippet the index returned.  Off by
+    default; it costs one model call per passage.
+- Search results now carry `confidence`, `hint`, `rerank_top1`, and — when the
+  extra passes ran — `expand` / `rewrite` / `page_rerank` blocks.
+
+### Fixed
+
+- **An identifier lookup is never rewritten.** Porting the rewrite stage as-is
+  reintroduced a real defect: `UNIQ-CLI-CANARY-88888` (zero hits) was rewritten
+  into generic prose, which then matched unrelated pages, so a lookup that must
+  return nothing started returning noise.  The lexical layer guarantees
+  identifiers match exactly or not at all; a one-token query carrying a digit or
+  a separator now skips the expansion stage.  Found by an existing test that
+  failed the moment the stage was enabled.
+
+### Changed
+
+- The rewrite cache and synonym table live under `<home>/state/` and
+  `<home>/dict/` and can be redirected with `DSH_KB_REWRITE_CACHE_DB` /
+  `DSH_KB_DICT_PATH`.  No absolute path is built in.
+- The test-suite is hermetic: query rewriting and its endpoint are pinned off in
+  `tests/__init__.py`, so a laptop with a local model running and a bare CI
+  runner produce the same results.
+- Requires `handrolled>=0.1.1` (adds `DSH_KB_DEEP_KEY_NAME`, so a deployment can
+  keep its deep-rerank key in an existing shared credentials file instead of
+  duplicating the secret).
+
 ## [0.4.0] — 2026-10-31
 
 ### Changed

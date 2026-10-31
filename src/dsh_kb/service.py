@@ -124,7 +124,7 @@ def search_payload(
         cfg, query, zone=zone, limit=limit, snippet_chars=snippet_chars,
         fresh_seconds=cfg.stale_minutes * 60, deep=deep,
     )
-    return {
+    payload = {
         "ok": bool(result.hits),
         "query": result.query,
         "tokens": result.tokens,
@@ -136,6 +136,65 @@ def search_payload(
         "note": " | ".join(x for x in (result.note, note) if x),
         "hits": [hit_dict(h) for h in result.hits],
     }
+
+    # The passes below only run when the first one was weak, and each one is
+    # allowed to fail into "do nothing".  See dsh_kb.expansion for why.
+    from . import expansion
+
+    fresh_seconds = cfg.stale_minutes * 60
+    confidence = expansion.confidence_fields(cfg, query, result.hits)
+    target = limit or (len(result.hits) or 10)
+    current_hits = list(result.hits)
+
+    if expansion.needs_rewrite(query, result.hits, confidence):
+        started = time.monotonic()
+
+        # 1) synonym substitution — milliseconds, no model call
+        dict_expanded = expansion.dict_variants(cfg, query)
+        extra = expansion.search_many(
+            cfg, dict_expanded, search=search, zone=zone, limit=limit,
+            snippet_chars=snippet_chars, fresh_seconds=fresh_seconds, deep=deep)
+        if extra:
+            merged = expansion.merge_variants(list(result.hits), extra, target)
+            payload["hits"] = [hit_dict(h) for h in merged]
+            payload["count"] = len(merged)
+            payload["expand"] = {
+                "source": "dict", "variants": len(dict_expanded),
+                "ms": round((time.monotonic() - started) * 1000),
+            }
+            current_hits = merged
+            confidence = expansion.confidence_fields(cfg, query, merged)
+
+        # 2) model rewriting — only when a model is configured to answer
+        variants = expansion.rewrite_variants(cfg, query) if expansion.REWRITE_MODE != "off" else []
+        extra = expansion.search_many(
+            cfg, variants, search=search, zone=zone, limit=limit,
+            snippet_chars=snippet_chars, fresh_seconds=fresh_seconds, deep=deep)
+        if extra:
+            merged = expansion.merge_variants(current_hits, extra, target)
+            current_hits = merged
+            payload["hits"] = [hit_dict(h) for h in merged]
+            payload["count"] = len(merged)
+            payload["rewrite"] = {
+                "used": True, "model": expansion.REWRITE_MODEL,
+                "variants": len(variants),
+                "ms": round((time.monotonic() - started) * 1000),
+            }
+            confidence = expansion.confidence_fields(cfg, query, merged)
+
+    if expansion.PAGE_RERANK == "always" or (
+            expansion.PAGE_RERANK == "auto"
+            and confidence.get("confidence") in ("low", "medium", "none")):
+        started = time.monotonic()
+        reranked, meta = expansion.page_rerank(cfg, query, current_hits, target)
+        if meta:
+            payload["hits"] = [hit_dict(h) for h in reranked]
+            payload["count"] = len(reranked)
+            payload["page_rerank"] = {**meta, "ms": round((time.monotonic() - started) * 1000)}
+            confidence = expansion.confidence_fields(cfg, query, reranked)
+
+    payload.update(confidence)
+    return payload
 
 
 def search_with_refresh(

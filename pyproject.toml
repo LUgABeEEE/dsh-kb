@@ -26,7 +26,7 @@ classifiers = [
 # One dependency, and it has none: `handrolled` is the stdlib-only toolkit this
 # project's text/WebDAV/mount/import layers were extracted into.  The whole tree
 # stays pure Python with no compiled extensions.
-dependencies = ["handrolled>=0.1.0"]
+dependencies = ["handrolled>=0.1.1"]
 dynamic = ["version"]
 
 [project.urls]
