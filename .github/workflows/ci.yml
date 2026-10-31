@@ -130,7 +130,10 @@ jobs:
               meta = next(n for n in z.namelist() if n.endswith("METADATA"))
               parsed = email.parser.Parser().parsestr(z.read(meta).decode())
           deps = parsed.get_all("Requires-Dist") or []
-          assert deps == ["handrolled>=0.1.0"], f"unexpected runtime dependencies: {deps}"
+          # Exactly one, and it is handrolled.  Not pinned to a version here: the
+          # point of the check is the shape, not the current number.
+          assert len(deps) == 1, f"expected exactly 1 dependency, got {deps}"
+          assert deps[0].split(">")[0].split("=")[0].strip() == "handrolled", deps
           print("exactly one dependency:", deps[0])
           PY
 
