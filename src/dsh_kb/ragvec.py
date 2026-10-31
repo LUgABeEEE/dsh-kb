@@ -199,7 +199,7 @@ class VectorArm:
 
     def embed(self, text: str) -> "object":
         if _embed_provider() == "onnx":
-            from .embed_onnx import embed_texts as _embed_texts
+            from handrolled.embed_onnx import embed_texts as _embed_texts
 
             vec = _embed_texts([text], is_query=True)[0]
             return self.np.asarray(vec, dtype="<f4")
@@ -306,7 +306,7 @@ def augment(cfg, query: str, limit: int, existing: list, snippet_chars: int, zon
     vec = arm.query(query, prefixes, depth=depth, hyde_text=hyde)
     if rerank and len(vec) > 1 and getattr(cfg.rag, "rerank_enabled", False):
         try:
-            from . import rerank as _rr
+            from handrolled import rerank as _rr
             topn = max(2, int(getattr(cfg.rag, "rerank_topn", 24) or 24))
             head = vec[:topn]
             _chars = int(getattr(cfg.rag, 'rerank_passage_chars', 480) or 480)

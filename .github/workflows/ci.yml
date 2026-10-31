@@ -66,9 +66,9 @@ jobs:
           python-version: "3.12"
 
       # Run this first, on a runner with no numpy at all: it asserts that
-      # `import dsh_kb` pulls in no third-party module and that every optional
-      # layer reports itself absent when nothing is configured.
-      - name: Unconfigured means off (zero-dependency promise)
+      # `import dsh_kb` pulls in no heavy third-party module and that every
+      # optional layer reports itself absent when nothing is configured.
+      - name: Unconfigured means off (no optional layer switches itself on)
         run: python -m unittest tests.test_optional_off -v
 
       # Now install the one dependency the vector arm needs, and prove two

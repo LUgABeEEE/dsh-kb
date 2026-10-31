@@ -12,7 +12,7 @@ Three interchangeable implementations behind one duck-typed interface::
   mount or a Windows drive/UNC path.  Walking is ``rglob`` and reads are
   ``open()``: the fast path (a 10 000-file tree walks in milliseconds).
   A network mount behaves differently enough that the class inspects it (see
-  :mod:`dsh_kb.mounts`) and turns raw OS errors into actionable sentences.
+  :mod:`handrolled.mounts`) and turns raw OS errors into actionable sentences.
 * :class:`SmbSource` — a Samba share reached through ``smbclient`` **without
   mounting**, for hosts where mounting needs root or the mount has gone stale.
 * :class:`WebdavSource` — a remote collection over HTTP(S), one PROPFIND per
@@ -31,7 +31,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from .config import Config, source_available
-from .mounts import describe_path, stale_hint
+from handrolled.mounts import describe_path, stale_hint
 
 PROBE_NAME = ".dsh-kb-write-probe"
 
@@ -543,7 +543,7 @@ def _webdav_from_config(cfg: Config, base_url: str):
     ``DSH_KB_WEBDAV_PASSWORD``) or a credentials file — never from the config
     file, so a config that gets shared cannot leak them.
     """
-    from .webdav import WebDAVClient
+    from handrolled.webdav import WebDAVClient
 
     password = os.environ.get("DSH_KB_WEBDAV_PASSWORD", "")
     cred_file = os.environ.get("DSH_KB_WEBDAV_CREDENTIALS", "")

@@ -16,7 +16,7 @@ the suite, that is a bug worth reporting.
 
 ## House rules
 
-**1. Zero runtime dependencies.** This is the headline feature, not an
+**1. No compiled runtime dependencies.** This is the headline feature, not an
 accident. A pull request that adds a runtime dependency needs a very good
 reason and a discussion first. Standard library only.
 

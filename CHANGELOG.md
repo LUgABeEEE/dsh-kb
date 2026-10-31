@@ -4,6 +4,30 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-10-31
+
+### Changed
+
+- **The reusable half moved out into [`handrolled`](https://github.com/LUgABeEEE/handrolled).**
+  `text`, `webdav`, `mounts`, the record importers and the optional ranking
+  layers had nothing to do with knowledge bases in particular: they are
+  hand-rolled, standard-library-only replacements for things you would normally
+  `pip install`. They now live in a package of their own, which dsh-kb depends on.
+- **The dependency story changed, and the docs say so.** "No dependencies" became
+  "one dependency, which has none": `pip install dsh-kb` now pulls
+  `handrolled`, which is pure Python with no compiled extensions and an empty
+  `Requires-Dist` of its own.  The tree still contains no compiled code, and the
+  optional model-backed layers still import lazily and return `None` when absent.
+- `bash examples/demo.sh` now says what is missing instead of failing with an
+  ImportError when run from a bare checkout without the dependency installed.
+
+### Removed
+
+- `dsh_kb.text`, `dsh_kb.webdav`, `dsh_kb.mounts`, `dsh_kb.importer`,
+  `dsh_kb.importers`, `dsh_kb.rerank`, `dsh_kb.deeprank`, `dsh_kb.embed_onnx`
+  (now `handrolled.*`).  Their tests moved with them; 86 tests now live in the
+  new package (287 remain here).
+
 ## [0.3.4] — 2026-10-30
 
 ### Added

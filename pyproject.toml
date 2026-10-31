@@ -23,8 +23,10 @@ classifiers = [
   "Topic :: Text Processing :: Indexing",
   "Topic :: Utilities",
 ]
-# The whole point of this project: nothing to install, nothing to keep patched.
-dependencies = []
+# One dependency, and it has none: `handrolled` is the stdlib-only toolkit this
+# project's text/WebDAV/mount/import layers were extracted into.  The whole tree
+# stays pure Python with no compiled extensions.
+dependencies = ["handrolled>=0.1.0"]
 dynamic = ["version"]
 
 [project.urls]

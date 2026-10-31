@@ -12,7 +12,8 @@
 而 agent 每次会话都要重新翻一遍的人或小队。不是一个托管服务、不是多租户、
 也不是笔记软件——一台机器、一个 bundle、一个主人。
 
-**成本**：Python ≥ 3.10，**零依赖**——没有守护进程、没有服务端、不碰数据库服务、
+**成本**：Python ≥ 3.10，**一个依赖**（[`handrolled`](https://github.com/LUgABeEEE/handrolled)，
+它本身纯标准库、无编译扩展）——没有守护进程、没有服务端、不碰数据库服务、
 不需要 root，一条命令一个进程。状态（镜像 + 索引）在 `~/.dsh-kb` 下，约是 bundle
 体积的 1.9 倍；索引在本地，所以共享盘慢或离线只影响新鲜度，不影响可用性。
 
@@ -67,7 +68,8 @@ agent 调 search / read 拿"路径 + 行号 + 240 字符片段"
 
 ## 安装
 
-纯标准库，无第三方依赖（Python ≥ 3.10）：
+纯 Python，无编译扩展，一个依赖而它自己没有依赖
+（[`handrolled`](https://github.com/LUgABeEEE/handrolled) —— 本项目的文本/WebDAV/挂载/导入层抽出去的那个纯标准库工具箱）：
 
 ```bash
 pip install -e .          # 或直接 PYTHONPATH=src python3 -m dsh_kb

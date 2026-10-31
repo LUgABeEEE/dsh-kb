@@ -51,6 +51,16 @@ cat > "$BUNDLE/z2-sensitive/personal.md" <<'PAGE'
 If a search returns it, the zone policy is broken.
 PAGE
 
+# The editable install (`pip install -e .`) covers the dependency; running
+# straight from a checkout needs it importable too.
+if ! python3 -c 'import handrolled' >/dev/null 2>&1; then
+  echo "!! this demo needs the 'handrolled' package (the project's single"
+  echo "   dependency, itself stdlib-only). Install it with:"
+  echo "       pip install handrolled"
+  echo "   or:  pip install -e .   from the repository root."
+  exit 1
+fi
+
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 export DSH_KB_HOME="$KB_HOME"
 export DSH_KB_SOURCE="local"

@@ -17,14 +17,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from dsh_kb.mounts import (  # noqa: E402
-    decode_mount_field,
-    describe_path,
-    is_unc,
-    mount_for,
-    parse_mounts,
-    stale_hint,
-)
 from dsh_kb.sources import (  # noqa: E402
     FilesystemSource,
     SmbSource,
@@ -67,66 +59,6 @@ SMB_LISTING = textwrap.dedent(
     \\t\\t7772088952 blocks of size 1024. 5891711316 blocks available
     """
 )
-
-
-class TestMountTable(unittest.TestCase):
-    def test_octal_escapes_are_decoded(self):
-        self.assertEqual(decode_mount_field(r"/mnt/with\040space"), "/mnt/with space")
-        self.assertEqual(decode_mount_field(r"a\134b"), "a\\b")
-        self.assertEqual(decode_mount_field("plain"), "plain")
-
-    def test_parse_reads_all_rows(self):
-        rows = parse_mounts(MOUNTS)
-        self.assertEqual(len(rows), 6)
-        self.assertIn("cifs", {r.fstype for r in rows})
-
-    def test_longest_mount_point_wins(self):
-        inside = mount_for("/mnt/kb-out/reports", mounts_text=MOUNTS)
-        self.assertIsNotNone(inside)
-        self.assertEqual(inside.mountpoint, "/mnt/kb-out")
-        outer = mount_for("/mnt/kb/other", mounts_text=MOUNTS)
-        self.assertEqual(outer.mountpoint, "/mnt/kb")
-
-    def test_network_and_readonly_flags(self):
-        self.assertTrue(mount_for("/mnt/kb/x", mounts_text=MOUNTS).is_network)
-        self.assertTrue(mount_for("/mnt/nfs/x", mounts_text=MOUNTS).is_network)
-        self.assertFalse(mount_for("/etc/hosts", mounts_text=MOUNTS).is_network)
-        self.assertTrue(mount_for("/mnt/archive/x", mounts_text=MOUNTS).readonly)
-        self.assertFalse(mount_for("/mnt/kb/x", mounts_text=MOUNTS).readonly)
-
-    def test_device_reported_for_cifs(self):
-        self.assertEqual(mount_for("/mnt/kb/x", mounts_text=MOUNTS).server, "//192.0.2.10/kb")
-
-    def test_autofs_trigger_does_not_shadow_the_real_mount(self):
-        """`/proc/mounts` lists an autofs trigger and the cifs mount on the same
-        mount point; the real filesystem must win."""
-        table = (
-            "systemd-1 /mnt/nas/kb autofs rw,relatime,fd=63,pgrp=1 0 0\n"
-            "//192.0.2.10/kb /mnt/nas/kb cifs rw,relatime,vers=3.0 0 0\n"
-        )
-        info = mount_for("/mnt/nas/kb/知识库", mounts_text=table)
-        self.assertEqual(info.fstype, "cifs")
-        self.assertTrue(info.is_network)
-
-    def test_describe_path_marks_unc_and_local(self):
-        self.assertTrue(describe_path(r"\\nas\share\kb")["unc"])
-        self.assertTrue(is_unc("//nas/share"))
-        self.assertFalse(is_unc("/mnt/kb"))
-        described = describe_path("/mnt/archive/x", mounts_text=MOUNTS)
-        self.assertTrue(described["network"])
-        self.assertTrue(described["readonly"])
-        self.assertEqual(described["fstype"], "cifs")
-
-    def test_stale_hint_is_actionable(self):
-        import errno
-
-        stale = stale_hint(OSError(errno.ESTALE, "Stale file handle"))
-        self.assertIn("stale", stale)
-        self.assertIn("mount -a", stale)
-        denied = stale_hint(OSError(errno.EACCES, "Permission denied"))
-        self.assertIn("read-only", denied)
-        gone = stale_hint(OSError(errno.ENOENT, "No such file or directory"))
-        self.assertIn("not reachable", gone)
 
 
 class TestRootNormalisation(unittest.TestCase):
@@ -322,7 +254,7 @@ class TestWebdavEncoding(unittest.TestCase):
     """
 
     def _client(self, url: str):
-        from dsh_kb.webdav import WebDAVClient
+        from handrolled.webdav import WebDAVClient
 
         return WebDAVClient(url)
 
@@ -499,7 +431,7 @@ class TestWebdavSource(unittest.TestCase):
 
     def test_a_failing_subdirectory_is_recorded_but_not_fatal(self):
         from dsh_kb.sources import WebdavSource
-        from dsh_kb.webdav import DavEntry
+        from handrolled.webdav import DavEntry
 
         class HalfDeadClient:
             base_path = "/kb"

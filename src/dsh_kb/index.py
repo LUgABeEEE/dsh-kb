@@ -46,7 +46,7 @@ from pathlib import Path
 
 from .config import Config
 from .supersede import page_meta
-from .text import (allows_relaxation, expand_for_index, make_snippet,
+from handrolled.text import (allows_relaxation, expand_for_index, make_snippet,
                    match_expression, query_tokens, split_frontmatter)
 
 SEARCH_OVERFETCH = 4
@@ -739,7 +739,7 @@ def search(
     shift = _shift
     if shift > 0 and getattr(cfg.rag, "rerank_enabled", False) and len(result.hits) > 1:
         try:
-            from . import rerank as _rr
+            from handrolled import rerank as _rr
             from .ragvec import _snippet as _snp
             _chars = int(getattr(cfg.rag, "rerank_passage_chars", 480) or 480)
             _passages = [_snp(cfg.mirror_dir, h.path, h.line, _chars) for h in result.hits]
@@ -753,7 +753,7 @@ def search(
             pass
     if _deep and len(result.hits) > 1:
         try:
-            from . import deeprank as _dr
+            from handrolled import deeprank as _dr
             from .ragvec import _snippet as _snp
             _seen: set = set()
             _uniq: list = []

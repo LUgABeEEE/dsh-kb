@@ -40,7 +40,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .text import parse_frontmatter
+from handrolled.text import parse_frontmatter
 
 #: Keys this module owns.  ``not_superseding`` is a *declaration* (the proposal
 #: gate's escape hatch), not a relation, so it never reaches the index.

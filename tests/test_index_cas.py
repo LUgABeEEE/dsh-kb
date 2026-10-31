@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from dsh_kb import index  # noqa: E402
 from dsh_kb.config import Config  # noqa: E402
-from dsh_kb.text import expand_for_index  # noqa: E402
+from handrolled.text import expand_for_index  # noqa: E402
 
 #: Corpus used by every test here.  Each page is longer than ``chunk_lines``
 #: (15), so a page holds several chunks and every chunk id can still be

@@ -1,7 +1,7 @@
 """The optional layers must be off in a stock environment.
 
-The semantic arm is the one part of this project that can pull in third-party
-code, models and network egress.  Everything about it is gated by configuration,
+The semantic arm is the one part of this project that can pull in heavy
+third-party code, models and network egress.  Everything about it is gated by configuration,
 and this file is the counterweight to "it exists": a clone that has never heard
 of ``DSH_KB_RERANK_ROOT`` or ``DSH_KB_DEEP_ENDPOINT`` has to behave exactly like
 0.1.0 and say so, instead of guessing at a path.
@@ -27,7 +27,8 @@ import json
 import sys
 
 import dsh_kb
-from dsh_kb import config, deeprank, embed_onnx, rerank
+from dsh_kb import config
+from handrolled import deeprank, embed_onnx, rerank
 
 rag = config.RagConfig()
 print(json.dumps({
@@ -56,8 +57,9 @@ class TestOptionalLayersAreOff(unittest.TestCase):
             raise AssertionError(f"probe failed:\n{result.stdout}\n{result.stderr}")
         cls.state = json.loads(result.stdout.strip().splitlines()[-1])
 
-    def test_importing_the_package_pulls_in_no_third_party_code(self):
-        """The zero-dependency promise: `import dsh_kb` must stay stdlib-only."""
+    def test_importing_the_package_pulls_in_no_heavy_third_party_code(self):
+        """`dsh_kb` has one dependency (handrolled, itself stdlib-only); it must
+        never drag in numpy/onnxruntime/tokenizers behind your back."""
         self.assertEqual(self.state["third_party"], [])
 
     def test_model_backed_layers_report_themselves_absent(self):

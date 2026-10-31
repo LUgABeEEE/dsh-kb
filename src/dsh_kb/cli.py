@@ -49,7 +49,7 @@ from . import ragcheck, supersede
 from .config import Config, load_config, source_available
 from .index import build, index_age, read, search, stats
 from .mirror import manifest_age, mirror_files, mirror_size, sync
-from .mounts import describe_path
+from handrolled.mounts import describe_path
 from .service import (
     DiffUnavailable,
     diff_payload,
@@ -1280,8 +1280,8 @@ def cmd_import(args) -> int:
     what the source already holds.  Writing needs ``--write``; nothing here ever
     deletes, because a generated view that can delete is a loaded gun.
     """
-    from . import importer as importer_mod
-    from .importers import load as load_records
+    from handrolled import pages as importer_mod
+    from handrolled.importers import load as load_records
 
     cfg = _config(args)
     # Deterministic by default: no wall-clock stamp, so re-importing the same
@@ -1499,7 +1499,7 @@ def build_parser() -> argparse.ArgumentParser:
                         "page and no declaration is reported as must_declare")
     p.set_defaults(func=cmd_supersede_check)
 
-    from .importers import names as _adapter_names
+    from handrolled.importers import names as _adapter_names
 
     p = command("import", "import records from another tool into the bundle "
                           "(dry-run unless --write)")

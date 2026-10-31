@@ -19,7 +19,8 @@ folder — on a network share, a NAS, or just a directory — and whose agent ke
 re-reading it. Not a hosted product, not a multi-tenant service, not a
 note-taking UI: one machine, one bundle, one owner.
 
-**What it costs**: Python ≥ 3.10 and **no dependencies** — no daemon, no server,
+**What it costs**: Python ≥ 3.10 and **one dependency** ([`handrolled`](https://github.com/LUgABeEEE/handrolled),
+itself standard-library only, no compiled extensions) — no daemon, no server,
 no database service, no root. One process per command. State (mirror + index)
 lives under `~/.dsh-kb` and runs about 1.9× the size of the bundle; the index is
 local, so a share that is offline or slow costs you freshness, not availability.
@@ -76,7 +77,9 @@ Rationale and measurements: [docs/design.md](docs/design.md).
 
 ## Install
 
-Standard library only, no third-party dependencies (Python ≥ 3.10):
+Pure Python, no compiled extensions, one dependency that has none of its own
+([`handrolled`](https://github.com/LUgABeEEE/handrolled) — the stdlib-only toolkit
+this project's text/WebDAV/mount/import layers were extracted into):
 
 ```bash
 pip install -e .          # or simply PYTHONPATH=src python3 -m dsh_kb
