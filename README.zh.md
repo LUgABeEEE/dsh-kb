@@ -4,6 +4,10 @@
 
 [English](README.md) | 中文
 
+[![CI](https://github.com/LUgABeEEE/dsh-kb/actions/workflows/ci.yml/badge.svg)](https://github.com/LUgABeEEE/dsh-kb/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/dsh-kb.svg)](https://pypi.org/project/dsh-kb/)
+[![M8ven Score](https://m8ven.ai/badge/mcp/lugabeeee-dsh-kb-1rwx47?variant=verified)](https://m8ven.ai/mcp/lugabeeee-dsh-kb-1rwx47?s=readme)
+
 ---
 
 ## 给谁用、跑起来要花什么、两分钟怎么试
@@ -395,6 +399,18 @@ python3 -m unittest discover -s tests -t . -v
 
 装了官方 MCP SDK 时，还会额外跑一条**互操作测试**（用真实客户端连这个手写服务器）；
 没装则自动跳过。
+
+## 第三方评分
+
+[![M8ven Score](https://m8ven.ai/badge/mcp/lugabeeee-dsh-kb-1rwx47?variant=verified)](https://m8ven.ai/mcp/lugabeeee-dsh-kb-1rwx47?s=readme)
+
+收录在 [M8ven Trust Index](https://m8ven.ai/mcp/lugabeeee-dsh-kb-1rwx47)：**C 级 ·
+「Emerging」**，按它的评分规则，尚未有采用度的新项目最高只能到 C。它自己的说法是：
+*「等级受声誉上限约束，而非任何发现；这不是警告。」* 该仓库没有任何安全问题被列出。
+扫描覆盖的是提交 `35e2721`（0.3.3），所以落后于当前版本。
+
+上面的徽章用的是 M8ven 提供的 `variant=verified` 形式，显示「independently scored」
+而不重复一个反映**采用度而非代码质量**的字母等级 —— 具体分数点一下就能看到。
 
 ## Roadmap
 
