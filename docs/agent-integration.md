@@ -127,9 +127,9 @@ dsh-kb mcp                     # 或用 python -m dsh_kb mcp
 
 | 项 | 大小 |
 |---|---|
-| `tools/list` 全文（4 个工具及其参数） | **1684 字符 ≈ 421 tokens**（实测） |
+| `tools/list` 全文（4 个工具及其参数 + annotations） | **2099 字符 ≈ 525 tokens**（实测；其中 415 字符是四个 readOnly/destructive/idempotent/openWorld 标注） |
 | `initialize.instructions` | 125 字符 ≈ 31 tokens |
-| **合计常驻** | **≈ 421 tokens / 每次模型调用** |
+| **合计常驻** | **≈ 556 tokens / 每次模型调用** |
 | 单次 `search` 返回 | 约 2.4 KB ≈ 1.2 K tokens，**与库大小无关** |
 
 > 这 450 tokens 是**唯一**的固定开销（相对平均 23 万 tokens 的上下文约 0.19%）。

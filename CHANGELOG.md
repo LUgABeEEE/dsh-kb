@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] — 2026-10-30
+
+### Added
+
+- **All four MCP tool annotations** (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`) on `search`, `read`, `status` and `skills`.
+  OpenAI's directory rejects a tool that omits any of them, and hosts cannot warn
+  before a call they know nothing about.  `search` is declared **not** read-only
+  on purpose: a stale index is refreshed first, which writes to the local mirror
+  and index (never to the source).  Claiming otherwise would be exactly the
+  claim-vs-code gap this project treats as a red flag elsewhere.
+
+### Changed
+
+- Standing MCP cost rises from ~421 to ~556 tokens (the annotations are 415 of
+  the 2099 `tools/list` characters). Paid knowingly: a test asserts the schema
+  budget so the number cannot drift silently, and the docs now carry the new one.
+- The `skills` tool description no longer claims a specific skill count — the
+  hard-coded "724 third-party skills" had gone stale.
+
 ## [0.3.3] — 2026-10-30
 
 ### Fixed

@@ -309,7 +309,7 @@ Two shapes, one implementation (`dsh_kb.service`), so their output cannot drift:
 | Shape | When | Cost |
 |---|---|---|
 | **CLI + `--json`** | any agent that can run a command | one subprocess and one tool round-trip (~30 ms) |
-| **MCP server (stdio)** | the host speaks MCP (recommended) | **~420 tokens** standing (1559-char `tools/list` + 125-char instructions, measured), one less layer per call |
+| **MCP server (stdio)** | the host speaks MCP (recommended) | **~556 tokens** standing (2099-char `tools/list` incl. annotations + 125-char instructions, measured), one less layer per call |
 
 ```bash
 dsh-kb mcp            # JSON-RPC on stdin/stdout, exposing search / read / status / skills

@@ -64,6 +64,14 @@ def tool_definitions() -> list[dict]:
         {
             "name": "search",
             "description": "Search the knowledge base; returns path, line and a snippet. Expand a hit with `read`.",
+            # Not read-only on purpose: a stale index is refreshed first, which
+            # writes to the local mirror and index. It never touches the source.
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
             "inputSchema": {
                 "type": "object",
                 "additionalProperties": False,
@@ -100,6 +108,12 @@ def tool_definitions() -> list[dict]:
         {
             "name": "read",
             "description": "Read a line window from a `path` returned by `search`.",
+            "annotations": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
             "inputSchema": {
                 "type": "object",
                 "additionalProperties": False,
@@ -126,11 +140,23 @@ def tool_definitions() -> list[dict]:
         {
             "name": "status",
             "description": "Mirror/index age, source and counts. Use when results look stale.",
+            "annotations": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {}},
         },
         {
             "name": "skills",
-            "description": "Search the curated skill library (724 third-party skills; kept out of the main index).",
+            "description": "Search the curated skill library kept in the z3-skills asset zone (deliberately outside the main index).",
+            "annotations": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
             "inputSchema": {
                 "type": "object",
                 "additionalProperties": False,

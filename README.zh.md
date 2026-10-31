@@ -301,7 +301,7 @@ export DSH_KB_WEBDAV_CONNECT=192.0.2.10      # 证书 CN 与地址不同时：�
 | 形态 | 何时用 | 代价 |
 |---|---|---|
 | **CLI + `--json`** | 任何能跑命令的 agent | 一次子进程 + 一次工具往返（约 30 ms） |
-| **MCP 服务器（stdio）** | 宿主支持 MCP（推荐） | 常驻 **≈ 420 tokens/次**（`tools/list` 1559 字符 + 指令 125 字符，实测），每次调用少一层包装 |
+| **MCP 服务器（stdio）** | 宿主支持 MCP（推荐） | 常驻 **≈ 556 tokens/次**（`tools/list` 2099 字符含 annotations + 指令 125 字符，实测），每次调用少一层包装 |
 
 ```bash
 dsh-kb mcp            # 在 stdin/stdout 上讲 JSON-RPC，暴露 search / read / status / skills

@@ -131,12 +131,36 @@ class TestProtocol(unittest.TestCase):
         adding a tool or a parameter is a real cost, not a freebie.
         """
         blob = json.dumps(tool_definitions(), ensure_ascii=False)
-        self.assertLess(len(blob), 1800, "tool schemas grew past the documented budget")
+        # 2255 → the four tool annotations cost ~415 chars (~104 tokens) standing. That is
+        # a deliberate trade: OpenAI's directory rejects a tool missing any hint, and
+        # hosts cannot warn before a call they know nothing about. Paid for knowingly,
+        # not by accident — still under a third of the pre-0.1.0 353-token *increase*.
+        self.assertLess(len(blob), 2400, "tool schemas grew past the documented budget")
         self.assertLess(len(INSTRUCTIONS), 200, "instructions grew past the budget")
 
     def test_instructions_do_not_encourage_routine_calls(self):
         """Wording is behaviour: "search before reading files" invited a lookup every turn."""
         self.assertIn("only when", INSTRUCTIONS)
+
+    def test_every_tool_declares_all_four_annotations(self):
+        """OpenAI's directory rejects a tool missing any hint; being honest matters more.
+
+        `search` is deliberately NOT read-only: a stale index is refreshed first,
+        which writes to the local mirror. Claiming otherwise would be exactly the
+        kind of claim-vs-code gap this project documents as a red flag.
+        """
+        hints = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
+        tools = {t["name"]: t for t in tool_definitions()}
+        for name, tool in tools.items():
+            annotations = tool.get("annotations") or {}
+            for hint in hints:
+                self.assertIn(hint, annotations, f"{name} is missing {hint}")
+                self.assertIsInstance(annotations[hint], bool,
+                                      f"{name}.{hint} must be an explicit boolean")
+        self.assertFalse(tools["search"]["annotations"]["readOnlyHint"],
+                         "search refreshes a stale index, so it is not read-only")
+        for name in ("read", "status", "skills"):
+            self.assertTrue(tools[name]["annotations"]["readOnlyHint"])
 
     def test_search_returns_hits(self):
         response = self.rpc("tools/call", {"name": "search", "arguments": {"query": "挂载"}})
