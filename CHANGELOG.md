@@ -4,6 +4,35 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-11-05
+
+### Changed
+
+- **Tool descriptions now say *when* to use each tool, not just what it returns.**
+  A model picking among forty tools reads the description as its only hint about
+  relevance; `search` said what it returns and nothing about when it is the right
+  tool, so it read as generic.
+
+  Measured first, over 14 days and 69,506 tool calls on a real deployment:
+  `mcp__kb__*` was called 74 times (0.11%). The comparison that made the cause
+  obvious: `status` — an auxiliary tool that should almost never be called on its
+  own — was called 10 times, and its description already said *"Use when results
+  look stale"*. `search`, the main entry point, had no such sentence.
+
+  So each description gained one clause about the moment it applies:
+  `search` → before deriving something from scratch; `read` → before quoting a
+  hit, since the snippet is not the page; `status` → before concluding a topic is
+  not covered; `skills` → before improvising a workflow that may be written down.
+
+  Cost: the resident schema grew 2255 → 2560 chars (~+75 tokens per call). Paid
+  knowingly, and the test that guards this budget now records why. **This is a
+  hypothesis, not a result** — the same usage count re-run in a few weeks
+  decides whether it paid, and the note in `tests/test_mcp.py` says so.
+
+### Notes
+
+- No behaviour change: the retrieval path is untouched. Descriptions only.
+
 ## [0.5.1] — 2026-11-01
 
 ### Added

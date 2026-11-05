@@ -135,7 +135,16 @@ class TestProtocol(unittest.TestCase):
         # a deliberate trade: OpenAI's directory rejects a tool missing any hint, and
         # hosts cannot warn before a call they know nothing about. Paid for knowingly,
         # not by accident — still under a third of the pre-0.1.0 353-token *increase*.
-        self.assertLess(len(blob), 2400, "tool schemas grew past the documented budget")
+        # 2560 (2026-11-05): +160 chars of *trigger conditions*, not new tools or
+        # parameters.  Measured over 14 days / 69,506 tool calls, `mcp__kb__*` was
+        # called 74 times (0.11%) — and `status`, whose description already said
+        # "Use when results look stale", was called 10 times, while `search` said
+        # only what it returns.  A description that never says *when* reads as
+        # "irrelevant" to a model choosing among 40 tools.
+        #
+        # This is a hypothesis, not a result: the same count script re-run in a
+        # few weeks decides whether it paid.  If usage does not move, cut it back.
+        self.assertLess(len(blob), 2600, "tool schemas grew past the documented budget")
         self.assertLess(len(INSTRUCTIONS), 200, "instructions grew past the budget")
 
     def test_instructions_do_not_encourage_routine_calls(self):

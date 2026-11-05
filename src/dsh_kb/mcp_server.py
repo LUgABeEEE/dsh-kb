@@ -63,7 +63,7 @@ def tool_definitions() -> list[dict]:
     return [
         {
             "name": "search",
-            "description": "Search the knowledge base; returns path, line and a snippet. Expand a hit with `read`.",
+            "description": "Search the knowledge base: notes, past decisions, runbooks, reports. Use before deriving from scratch — when asked how something was done, or before work that likely has a write-up. Returns path, line, snippet; expand with `read`.",
             # Not read-only on purpose: a stale index is refreshed first, which
             # writes to the local mirror and index. It never touches the source.
             "annotations": {
@@ -107,7 +107,7 @@ def tool_definitions() -> list[dict]:
         },
         {
             "name": "read",
-            "description": "Read a line window from a `path` returned by `search`.",
+            "description": "Read a line window from a `path` returned by `search`. Do it before quoting a hit — the snippet is 240 chars, not the page.",
             "annotations": {
                 "readOnlyHint": True,
                 "destructiveHint": False,
@@ -139,7 +139,7 @@ def tool_definitions() -> list[dict]:
         },
         {
             "name": "status",
-            "description": "Mirror/index age, source and counts. Use when results look stale.",
+            "description": "Mirror/index age and what the base actually holds. Use when results look stale or empty, before concluding a topic is not covered.",
             "annotations": {
                 "readOnlyHint": True,
                 "destructiveHint": False,
@@ -150,7 +150,7 @@ def tool_definitions() -> list[dict]:
         },
         {
             "name": "skills",
-            "description": "Search the curated skill library kept in the z3-skills asset zone (deliberately outside the main index).",
+            "description": "Search curated playbooks (z3-skills, outside the main index). Check before improvising a workflow that may already be written down.",
             "annotations": {
                 "readOnlyHint": True,
                 "destructiveHint": False,
