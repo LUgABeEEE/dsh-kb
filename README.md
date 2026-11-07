@@ -409,7 +409,7 @@ without `--allow-public`. See [docs/import.md](docs/import.md).
 
 ## Status
 
-Alpha (0.5.0) with 321 tests (unit, end-to-end, transport, CLI smoke and MCP — all offline):
+Alpha (0.6.0) with 435 tests (unit, end-to-end, transport, CLI smoke and MCP — all offline):
 
 ```bash
 python3 -m unittest discover -s tests -t . -v
@@ -422,6 +422,10 @@ client against this hand-rolled server); otherwise it skips.
 
 - [x] MCP server (`mcp__kb__search` / `read` / `status` / `skills`)
 - [x] Semantic fallback, used only when keyword search returns nothing — **opt-in and off by default** ([docs/semantic-arm.md](docs/semantic-arm.md))
+- [x] Structural chunking — split at Markdown headings, never inside a fenced block
+      (`chunk_strategy = "structural"`; `lines` stays the byte-identical default)
+- [x] Optional image arm — pictures participate in the same ranking, in their own
+      sidecar database, off by default
 - [ ] Scheduled refresh (systemd timer / cron examples)
 - [ ] Chinese embedding evaluation to pick a default model
 - [ ] Optional read-only HTTP viewer

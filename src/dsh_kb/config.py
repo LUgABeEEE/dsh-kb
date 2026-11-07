@@ -68,6 +68,32 @@ DEFAULT_RAG_VECTORS_DB = ""
 DEFAULT_RAG_MODEL = "bge-m3"
 DEFAULT_RAG_DIM = 1024
 
+#: 分块策略的合法取值。``lines`` 是历史行为——固定 ``chunk_lines`` 行滑窗，
+#: 不读配置时与改造前**逐字节一致**（这一点是硬要求：chunk_id 由块内容算出，
+#: 切块一变就等于要求全量重嵌向量，不能因为一次升级被静默触发）。
+#: ``structural`` 是结构优先：Markdown 的 #/##/### 标题起新块、围栏代码块
+#: （```/~~~）不切、超长块按空行回落、每块不超过 ``chunk_max_chars`` 个字符。
+CHUNK_STRATEGIES: tuple[str, ...] = ("lines", "structural")
+DEFAULT_CHUNK_STRATEGY = "lines"
+#: ``structural`` 下的块长上限，单位是**字符**（UTF-8 码位），不是字节。
+#: 围栏代码块与单行超长文本是原子单位：宁可超过上限也不切开（见
+#: ``index._chunk_structural`` 的注释），否则「代码块不切」与「不丢行」会互相打架。
+DEFAULT_CHUNK_MAX_CHARS = 1000
+
+
+def normalise_chunk_strategy(value) -> str:
+    """Return a strategy this version can actually run.
+
+    Anything unrecognised (a typo, an old value, ``None``, a non-string from a
+    hand-written config.json) falls back to ``lines``.  Falling back is the
+    *safe* direction on purpose: ``structural`` changes every ``chunk_id`` and
+    therefore demands a full re-embed, so a misspelt value must never switch it
+    on by accident.  ``load_config`` additionally reports the bad value through
+    ``unknown_keys`` (visible in ``dsh-kb doctor``) so the typo is not silent.
+    """
+    text = str(value if value is not None else "").strip().lower()
+    return text if text in CHUNK_STRATEGIES else DEFAULT_CHUNK_STRATEGY
+
 
 @dataclass(frozen=True)
 class Zone:
@@ -160,6 +186,26 @@ class RagConfig:
     vector_rrf_vec_weight: float = 1.0
     #: 勉强命中时让给语义路的槽位数
     vector_weak_reserve: int = 2
+    # ---- 图片多模态侧车（P2，2026-11-06）--------------------------------
+    #: 图片路是否并入 RRF 第三路。默认 **关**：开着却没有 ``vectors-image.sqlite``
+    #: 或没有 Ark key 时，检索会退化成「每次多一次失败尝试」，零依赖承诺也破了。
+    image_arm_enabled: bool = False
+    #: 图片路在 RRF 里自己的权重（与关键词/文本向量两路独立，默认 0.6）。
+    #: 低于 1.0 是刻意的：图片是补充信号，不该压过文本命中。
+    image_arm_weight: float = 0.6
+    #: 图片向量库路径；空串 = 「与 ``vectors_db`` 同目录的 ``vectors-image.sqlite``」，
+    #: 由 ``ragvec._default_image_db`` 解析（所以公开 clone 里不写机器路径）。
+    image_arm_db: str = ""
+
+    @property
+    def image_db(self) -> str:
+        """``image_arm_db`` 的历史读名。
+
+        ``ragvec._image_settings`` 先用 ``getattr(cfg.rag, "image_db", None)``
+        宽读（写这段时 config 层还没有这些字段），所以这里给一个只读别名：
+        字段名统一叫 ``image_arm_*``，已交付的读端不用改，两边同时生效。
+        """
+        return self.image_arm_db
 
 
 @dataclass(frozen=True)
@@ -182,6 +228,11 @@ class Config:
     #: size identical is invisible by design — `sync --full` exists for that.
     mtime_tolerance: float = 1.0
     chunk_lines: int = 15
+    #: 分块策略（见 :data:`CHUNK_STRATEGIES`）。默认 ``lines`` = 与历史行为一致；
+    #: ``structural`` 需要显式打开，因为切块一变所有 chunk_id 都会变、必须全量重嵌。
+    chunk_strategy: str = DEFAULT_CHUNK_STRATEGY
+    #: ``structural`` 的块长上限（字符数，不是字节数，见 ``index._chunk_structural``）。
+    chunk_max_chars: int = DEFAULT_CHUNK_MAX_CHARS
     snippet_chars: int = 240
     default_limit: int = 8
     max_read_lines: int = 200
@@ -191,6 +242,14 @@ class Config:
     #: 配置文件多一个键不该让整个 CLI 崩掉（旧版本读新配置、用户加注释键都会遇到），
     #: 让 `doctor` 把它报出来，比静默忽略或直接 TypeError 都好。
     unknown_keys: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        # 策略名先归一化再落库：``Config`` 也会在测试/脚本里被直接构造，校验放在
+        # 这里才挡得住绕过 ``load_config`` 的调用。未知值退回 ``lines``（见
+        # :func:`normalise_chunk_strategy`），所以读到的永远是**生效中**的值。
+        object.__setattr__(
+            self, "chunk_strategy", normalise_chunk_strategy(self.chunk_strategy)
+        )
 
     # ---- derived paths -------------------------------------------------
     @property
@@ -292,7 +351,9 @@ def _coerce_zones(raw) -> tuple[Zone, ...]:
 #: rag 配置既接受嵌套写法 ``"rag": {"vectors_db": ...}``，也接受扁平写法
 #: ``"rag_vectors_db": ...``（和环境变量 DSH_KB_RAG_* 同名，方便照抄）。
 _RAG_FIELDS = ("vectors_db", "model", "dim", "enabled",
-               "allow_external_vectors_db", "vector_enabled", "vector_mode", "vector_trigger", "vector_weak_cov", "vector_weak_reserve", "vector_weak_ratio", "hyde_enabled", "hyde_model", "hyde_prompt_tokens", "rerank_enabled", "rerank_topn", "rerank_max_length", "rerank_passage_chars", "rerank_page_agg", "rerank_title_boost", "rerank_two_stage", "rerank_stage2_maxlen", "rerank_stage2_chars", "rerank_max_shift", "rerank_shift_pool", "deep_enabled", "deep_candidates", "deep_pick", "deep_model", "deep_timeout_s", "deep_passage_chars", "d2q_enabled", "vector_depth", "rerank_always", "vector_always", "vector_rrf_kw_weight", "vector_rrf_vec_weight")
+               "allow_external_vectors_db", "vector_enabled", "vector_mode", "vector_trigger", "vector_weak_cov", "vector_weak_reserve", "vector_weak_ratio", "hyde_enabled", "hyde_model", "hyde_prompt_tokens", "rerank_enabled", "rerank_topn", "rerank_max_length", "rerank_passage_chars", "rerank_page_agg", "rerank_title_boost", "rerank_two_stage", "rerank_stage2_maxlen", "rerank_stage2_chars", "rerank_max_shift", "rerank_shift_pool", "deep_enabled", "deep_candidates", "deep_pick", "deep_model", "deep_timeout_s", "deep_passage_chars", "d2q_enabled", "vector_depth", "rerank_always", "vector_always", "vector_rrf_kw_weight", "vector_rrf_vec_weight",
+               # 图片侧车（P2）：收进 _RAG_FIELDS 才能「只写 config.json」生效。
+               "image_arm_enabled", "image_arm_weight", "image_arm_db")
 _RAG_ALIASES = {
     "rag_vectors_db": "vectors_db",
     "rag_model": "model",
@@ -333,7 +394,15 @@ def _coerce_rag(data: dict) -> tuple[dict, list[str]]:
         values["dim"] = int(values["dim"])
     except (KeyError, TypeError, ValueError):
         values.pop("dim", None)
-    for flag in ("enabled", "allow_external_vectors_db"):
+    # image_arm_weight：config.json 里写成字符串（"0.75"）也要能用，写错就丢掉
+    # 该键让默认 0.6 生效——一个坏值不该让 CLI / MCP 起不来。
+    try:
+        values["image_arm_weight"] = float(values["image_arm_weight"])
+    except (KeyError, TypeError, ValueError):
+        values.pop("image_arm_weight", None)
+    if not isinstance(values.get("image_arm_db", ""), str):   # 非字符串路径当作没写
+        values.pop("image_arm_db", None)
+    for flag in ("enabled", "allow_external_vectors_db", "image_arm_enabled"):
         if flag in values:
             values[flag] = (
                 _env_flag(values[flag]) if isinstance(values[flag], str) else bool(values[flag])
@@ -372,6 +441,8 @@ def load_config(**overrides) -> Config:
         "smb_share": "DSH_KB_SMB_SHARE",
         "webdav_root": "DSH_KB_WEBDAV_ROOT",
         "webdav_repo": "DSH_KB_WEBDAV_REPO",
+        # 分块策略是字符串，走这张「env 覆盖文件」的表；数值项在下面的 cast 循环里。
+        "chunk_strategy": "DSH_KB_CHUNK_STRATEGY",
     }
     for key, env in env_map.items():
         if os.environ.get(env):
@@ -381,12 +452,31 @@ def load_config(**overrides) -> Config:
         ("snippet_chars", "DSH_KB_SNIPPET_CHARS", int),
         ("default_limit", "DSH_KB_DEFAULT_LIMIT", int),
         ("mtime_tolerance", "DSH_KB_MTIME_TOLERANCE", float),
+        ("chunk_lines", "DSH_KB_CHUNK_LINES", int),
+        ("chunk_max_chars", "DSH_KB_CHUNK_MAX_CHARS", int),
     ):
         if os.environ.get(env):
             try:
                 data[key] = cast(os.environ[env])
             except ValueError:
                 pass
+
+    # 两个数值键：config.json 里写成字符串（"20"）也要能用，写错类型则丢掉该键
+    # 让默认值生效——与 rag.dim 的处置一致，不因为一个坏值让 CLI 崩掉。
+    for key in ("chunk_lines", "chunk_max_chars"):
+        if key in data:
+            try:
+                data[key] = int(data[key])
+            except (TypeError, ValueError):
+                data.pop(key)
+    # 策略名写错不静默：退回 lines（安全方向），同时记进 unknown_keys，
+    # 让 ``dsh-kb doctor`` 报出来——否则「以为是 structural、其实还在 lines」
+    # 只能靠 diff 索引才看得出来。
+    strategy_raw = data.get("chunk_strategy")
+    strategy_bad = (
+        strategy_raw is not None
+        and str(strategy_raw).strip().lower() not in CHUNK_STRATEGIES
+    )
 
     # rag 配置：config.json（嵌套或扁平）在前，DSH_KB_RAG_* 环境变量覆盖在后，
     # 与上面「env 覆盖文件」的优先级保持一致。
@@ -408,6 +498,7 @@ def load_config(**overrides) -> Config:
     # 一台机器用环境变量开功能、另一台用文件，排查起来会以为是两套行为。
     _already = {"vectors_db", "model", "dim", "enabled", "allow_external_vectors_db"}
     _flags = {"vector_enabled", "hyde_enabled", "rerank_enabled", "rerank_page_agg",
+              "image_arm_enabled",
               "rerank_title_boost", "rerank_two_stage", "rerank_always", "vector_always",
               "deep_enabled", "d2q_enabled"}
     _ints = {"vector_weak_cov", "vector_depth", "vector_weak_reserve", "rerank_topn",
@@ -415,7 +506,7 @@ def load_config(**overrides) -> Config:
              "rerank_stage2_chars", "rerank_max_shift", "rerank_shift_pool",
              "deep_candidates", "deep_pick", "deep_passage_chars", "hyde_prompt_tokens"}
     _floats = {"vector_weak_ratio", "vector_rrf_kw_weight", "vector_rrf_vec_weight",
-               "deep_timeout_s"}
+               "deep_timeout_s", "image_arm_weight"}
     for name in _RAG_FIELDS:
         if name in _already:
             continue
@@ -443,7 +534,8 @@ def load_config(**overrides) -> Config:
     data.pop("home", None)
 
     known = {f.name for f in fields(Config)}
-    unknown = tuple(sorted(list(set(data) - known) + rag_unknown))
+    unknown = tuple(sorted(list(set(data) - known) + rag_unknown
+                          + (["chunk_strategy"] if strategy_bad else [])))
     data = {k: v for k, v in data.items() if k in known}
     cfg = Config(home=home, zones=zones, never=never, index_never=index_never,
                  rag=rag, unknown_keys=unknown, **data)

@@ -4,6 +4,62 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-11-07
+
+### Added
+
+- **Optional image arm** (`image_embed.py`): pictures in the mirror become vectors
+  in their own sidecar database, and take part in the same RRF ranking as text.
+  Off unless `rag.image_arm_enabled`; retrieval never imports the module while it
+  is off, and an unreachable or unpaid provider degrades to one `note` line —
+  never to a failed search.
+
+  It is a **separate database on purpose**: the text vectors come from one model
+  at 1024 dimensions and the image vectors from another at 2048, so they cannot
+  share a table and the sidecar can be deleted and rebuilt at any time.
+
+  Three constraints are copied verbatim from measurement rather than "improved"
+  later, because each one fails *silently* when violated: the endpoint must be the
+  multimodal one (the plain embeddings path answers "does not support this api");
+  exactly **one input per request** (an array of several returns only the first
+  vector and no error — the nastiest kind of bug to chase); and the key must be
+  the pay-as-you-go one, since the subscription key returns "model not supported"
+  rather than "wrong key".
+
+- **Structural chunking** (`chunk_strategy = "structural"`): start a new chunk at
+  each Markdown heading, never split a fenced code block, fall back to blank-line
+  boundaries past `chunk_max_chars`. `lines` stays the default and is byte-for-byte
+  the previous behaviour — which is a hard requirement, not politeness: `chunk_id`
+  is content-addressed, so changing how text is cut silently demands re-embedding
+  the whole corpus. An unrecognised value falls back to `lines` rather than
+  guessing.
+
+### Fixed
+
+- **The vector cache outlived a re-chunk.** The cache key was
+  `(path, mtime, size)` of `vectors.sqlite` — and re-chunking rewrites
+  `kb.sqlite`, leaving the vector file's metadata untouched. The previous
+  generation's matrix was therefore reused verbatim, orphan rows included, and
+  the defect survived an entire re-embed. The key now includes the index's
+  identity, and rows whose `chunk_id` is absent from the current index are
+  dropped on load (the count is reported instead of silently vanishing).
+
+- The image arm's credential path had a hardcoded default under one machine's
+  home. There is now **no default**: where credentials live is a deployment fact,
+  and a built-in path either reads someone else's file on another machine or
+  reports a missing file as "the model is unavailable".
+
+### Changed
+
+- The credential **key name is the host's choice** (`DSH_KB_IMAGE_KEY_NAME`,
+  default `IMAGE_EMBED_API_KEY`). The library reads exactly one name and says
+  which name it looked for; it never tries a second key, because the wrong key on
+  this kind of provider fails as "model not supported" and a silent fallback would
+  turn a clear 401 into a confusing 400.
+
+Tests: 435 (was 339), including a stubbed-HTTP suite for the image arm that needs
+no key and no network.
+
 ## [0.5.2] — 2026-11-05
 
 ### Changed

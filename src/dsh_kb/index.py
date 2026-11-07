@@ -39,12 +39,13 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import Config
+from .config import DEFAULT_CHUNK_MAX_CHARS, Config
 from .supersede import page_meta
 from handrolled.text import (allows_relaxation, expand_for_index, make_snippet,
                    match_expression, query_tokens, split_frontmatter)
@@ -377,6 +378,237 @@ create index meta_path_line on meta(path, startline);
 """
 
 
+#: ATX headings that start a new chunk under ``structural``: ``#``, ``##``,
+#: ``###`` and only those.  ``####`` and deeper deliberately do **not** split —
+#: the strategy is specified as #/##/###, and a level-4 heading normally names a
+#: sub-item inside the section that already started at level 1–3.
+_HEADING_RE = re.compile(r"^ {0,3}(#{1,3})(?:[ \t]|$)")
+
+#: Fence delimiters: three or more backticks or tildes, indented at most three
+#: spaces.  Anchored at the line start on purpose — an inline ```code``` span
+#: never opens a fence.
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _fence_marker(line: str) -> tuple[str, int] | None:
+    """``(char, length)`` when the line is a code-fence delimiter, else ``None``."""
+    match = _FENCE_RE.match(line)
+    if not match:
+        return None
+    run = match.group(1)
+    return run[0], len(run)
+
+
+def _fence_flags(lines: list[str]) -> tuple[list[bool], list[int]]:
+    """Mark fenced code blocks: ``(in_fence, fence_end)``, both per line.
+
+    ``in_fence[i]`` is True for the opening delimiter, the body **and** the
+    closing one, so "this cut would tear the fence apart" is exactly
+    ``in_fence[i - 1] and in_fence[i]``.  ``fence_end[i]`` is the index just past
+    the closing delimiter of the fence containing line ``i`` (``len(lines)`` for
+    an unterminated fence), which lets the length splitter step over a fence
+    that is itself longer than the cap without cutting into it.
+    """
+    n = len(lines)
+    in_fence = [False] * n
+    fence_end = [n] * n
+    i = 0
+    while i < n:
+        marker = _fence_marker(lines[i])
+        if marker is None:
+            i += 1
+            continue
+        char, length = marker
+        end = n                                  # unterminated fence: runs to EOF
+        for j in range(i + 1, n):
+            closing = _fence_marker(lines[j])
+            if closing and closing[0] == char and closing[1] >= length:
+                end = j + 1
+                break
+        for k in range(i, end):
+            in_fence[k] = True
+            fence_end[k] = end
+        i = end
+    return in_fence, fence_end
+
+
+def _is_heading(line: str) -> bool:
+    return _HEADING_RE.match(line) is not None
+
+
+def _splits_fence(boundary: int, in_fence: list[bool]) -> bool:
+    """True when cutting *before* line ``boundary`` would cut a fence in half."""
+    return 0 < boundary < len(in_fence) and in_fence[boundary - 1] and in_fence[boundary]
+
+
+def _block_chars(lines: list[str], start: int, end: int) -> int:
+    """Characters in ``"\\n".join(lines[start:end])`` — the unit of ``chunk_max_chars``.
+
+    Python's ``len`` on a ``str`` counts code points, so CJK text is measured as
+    characters rather than as UTF-8 bytes (a 3-byte CJK character would otherwise
+    cost three times what the cap suggests).
+    """
+    if end <= start:
+        return 0
+    return sum(len(lines[i]) for i in range(start, end)) + (end - start - 1)
+
+
+def _content_blocks(lines: list[str], cuts: list[int]) -> list[tuple[int, int]]:
+    """Turn candidate cut positions into contiguous blocks that all carry content.
+
+    A cut is kept only when at least one non-blank line sits between it and the
+    previous kept cut; otherwise the blank run stays with the block that follows
+    it.  Dropping the *cut* instead of the lines is what keeps the page
+    reconstructible: the blocks remain an ordered, gapless partition of the page.
+    A blank tail is folded into the last block for the same reason.
+    """
+    n = len(lines)
+    prefix = [0] * (n + 1)                       # non-blank lines before index i
+    for i, line in enumerate(lines):
+        prefix[i + 1] = prefix[i] + (1 if line.strip() else 0)
+    kept: list[int] = []
+    prev = 0
+    for cut in sorted({c for c in cuts if 0 < c < n}):
+        if cut <= prev:
+            continue
+        if prefix[cut] - prefix[prev]:
+            kept.append(cut)
+            prev = cut
+    bounds = [0] + kept + [n]
+    if len(bounds) > 2 and not (prefix[n] - prefix[bounds[-2]]):
+        del bounds[-2]                           # blank tail joins the last block
+    return [(bounds[i], bounds[i + 1]) for i in range(len(bounds) - 1)]
+
+
+def _split_long_block(lines: list[str], start: int, end: int, max_chars: int,
+                      in_fence: list[bool], fence_end: list[int]) -> list[tuple[int, int]]:
+    """Split ``[start, end)`` into blocks of at most ``max_chars`` characters.
+
+    Cut preference, in order:
+
+    1. a blank-line boundary (the paragraph break) — the only cut that does not
+       tear a sentence in half;
+    2. any plain line boundary;
+    3. no cut available: the run is one fenced block, or one single line, that
+       is itself over the cap.  Both are atomic — they are emitted whole, since
+       cutting them would contradict "fences are never cut" and "no line is
+       ever lost or split".
+    """
+    out: list[tuple[int, int]] = []
+    s = start
+    while s < end:
+        # Largest prefix [s, e) that still fits the cap.
+        e = s
+        chars = 0
+        while e < end:
+            need = len(lines[e]) + (1 if e > s else 0)
+            if chars + need > max_chars:
+                break
+            chars += need
+            e += 1
+        if e >= end:
+            out.append((s, end))
+            break
+        cut = None
+        if e > s:
+            for cand in range(e, s, -1):
+                if lines[cand - 1].strip() == "" and not _splits_fence(cand, in_fence):
+                    cut = cand
+                    break
+            if cut is None:
+                for cand in range(e, s, -1):
+                    if not _splits_fence(cand, in_fence):
+                        cut = cand
+                        break
+        if cut is None:
+            cut = fence_end[s] if in_fence[s] else s + 1
+            cut = min(cut, end)
+        out.append((s, cut))
+        s = cut
+    return out
+
+
+def _merge_blank_blocks(lines: list[str], blocks: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Fold whitespace-only blocks into a neighbour instead of dropping their lines."""
+    out: list[tuple[int, int]] = []
+    for a, b in blocks:
+        if out and not any(lines[i].strip() for i in range(a, b)):
+            out[-1] = (out[-1][0], b)            # blank run joins the block before it
+        else:
+            out.append((a, b))
+    if len(out) > 1 and not any(lines[i].strip() for i in range(*out[0])):
+        out[0] = (out[0][0], out[1][1])          # ... or the one after, at page start
+        del out[1]
+    if out and not any(lines[i].strip() for i in range(*out[0])):
+        return []                                # nothing but whitespace: nothing to index
+    return out
+
+
+def _chunk_structural(raw: str, cfg: Config) -> list[tuple[int, str]]:
+    """Structure-first chunking — see :func:`_chunk_page` for the rules."""
+    lines = raw.splitlines()
+    if not lines:
+        return []
+    try:
+        max_chars = int(getattr(cfg, "chunk_max_chars", DEFAULT_CHUNK_MAX_CHARS))
+    except (TypeError, ValueError):              # pragma: no cover - Config coerces ints
+        max_chars = DEFAULT_CHUNK_MAX_CHARS
+    max_chars = max(1, max_chars)
+
+    in_fence, fence_end = _fence_flags(lines)
+    # A heading starts a new block — but only outside a fence: a line that looks
+    # like a heading inside a code block is code, not structure.
+    heading_cuts = [i for i in range(1, len(lines))
+                    if not in_fence[i] and _is_heading(lines[i])]
+    blocks: list[tuple[int, int]] = []
+    for a, b in _content_blocks(lines, heading_cuts):
+        if _block_chars(lines, a, b) <= max_chars:
+            blocks.append((a, b))
+        else:
+            blocks.extend(_split_long_block(lines, a, b, max_chars, in_fence, fence_end))
+    return [(a + 1, "\n".join(lines[a:b])) for a, b in _merge_blank_blocks(lines, blocks)]
+
+
+def _chunk_page(raw: str, cfg: Config) -> list[tuple[int, str]]:
+    """Split one page into ``(startline_1based, block_text)`` chunks.
+
+    The strategy comes from ``cfg.chunk_strategy``:
+
+    ``lines`` (default — the behaviour that predates this function)
+        Fixed ``chunk_lines``-line sliding window, kept verbatim on purpose.  A
+        chunk is named by its content (:func:`chunk_id_of`), so any change here
+        renames every chunk of every page and forces a full re-embed; that has
+        to be an explicit decision, never a side effect of an upgrade.  Any
+        value other than ``structural`` lands here too, so a typo cannot switch
+        the new behaviour on.
+
+    ``structural``
+        Structure first: a ``#``/``##``/``###`` heading starts a new chunk, a
+        fenced code block (```` ``` ```` or ``~~~``) is never cut, an over-long
+        section falls back to blank-line (paragraph) boundaries, and each chunk
+        stays within ``chunk_max_chars`` **characters**.  A fenced block and a
+        single line are atomic: if one of them alone exceeds the cap it is
+        emitted whole rather than torn apart.  A blank line is atomic too, which
+        is why a block already sitting on the cap may end one or two characters
+        over it — the alternative is dropping a line (measured on the production
+        corpus: 2 blocks out of 131 028).
+
+    Both strategies skip whitespace-only blocks.  The ``structural`` partition is
+    exact — an ordered, gapless run of line slices — so joining the blocks with
+    ``"\\n"`` rebuilds the page line for line.
+    """
+    if getattr(cfg, "chunk_strategy", "lines") == "structural":
+        return _chunk_structural(raw, cfg)
+    lines = raw.splitlines()
+    out: list[tuple[int, str]] = []
+    for start in range(0, len(lines), cfg.chunk_lines):
+        block = "\n".join(lines[start:start + cfg.chunk_lines])
+        if not block.strip():
+            continue
+        out.append((start + 1, block))
+    return out
+
+
 def build(cfg: Config, *, on_event=None) -> IndexStats:
     """Rebuild the index from scratch, in the CAS schema.
 
@@ -395,6 +627,10 @@ def build(cfg: Config, *, on_event=None) -> IndexStats:
     applied to it, so the same corpus always yields the same keys.  Collisions
     are resolved by :class:`_ChunkIds` and reported through ``on_event`` —
     they are a "this should be impossible" diagnostic, not a normal path.
+
+    The chunking itself lives in :func:`_chunk_page`; which shape the rebuild
+    used is logged **only** when it is not the historical one, so a default
+    deployment's log stays byte-identical.
     """
     emit = on_event or (lambda _m: None)
     started = time.perf_counter()
@@ -405,6 +641,9 @@ def build(cfg: Config, *, on_event=None) -> IndexStats:
         stale = Path(str(tmp) + suffix)
         if stale.exists():
             stale.unlink()
+
+    if getattr(cfg, "chunk_strategy", "lines") == "structural":
+        emit(f"chunk strategy: structural (max {cfg.chunk_max_chars} chars)")
 
     stats = IndexStats()
     ids = _ChunkIds()
@@ -435,15 +674,11 @@ def build(cfg: Config, *, on_event=None) -> IndexStats:
                 stats.supersede_edges += 1
             if page.superseded_by:
                 stats.superseded_pages += 1
-            lines = raw.splitlines()
-            for start in range(0, len(lines), cfg.chunk_lines):
-                block = "\n".join(lines[start:start + cfg.chunk_lines])
-                if not block.strip():
-                    continue
+            for startline, block in _chunk_page(raw, cfg):
                 rid, cid = ids.allocate(rel, block)
                 con.execute(
                     "insert into meta(rid, chunk_id, path, startline, text) values (?,?,?,?,?)",
-                    (rid, cid, rel, start + 1, block),
+                    (rid, cid, rel, startline, block),
                 )
                 con.execute(
                     "insert into chunks(rowid, toks) values (?,?)",

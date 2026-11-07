@@ -390,7 +390,7 @@ dsh-kb refresh
 
 ## 状态
 
-Alpha（0.5.0），已有 321 个测试（单元 + 端到端 + 传输层 + CLI 冒烟 + MCP，全部离线可跑）：
+Alpha（0.6.0），已有 435 个测试（单元 + 端到端 + 传输层 + CLI 冒烟 + MCP，全部离线可跑）：
 
 ```bash
 python3 -m unittest discover -s tests -t . -v
