@@ -39,7 +39,11 @@ from dsh_kb.index import Hit, build as index_build, search as index_search  # no
 
 #: 本机把 numpy 借给可选路的位置（仅当直接 import 不到时用）。测试本身不依赖
 #: 这个路径：没有 numpy 也能跑除 ``TestImageArmIntegration`` 以外的全部用例。
-_NUMPY_FALLBACKS = ("/data/agent/tools/kb-rerank/lib",)
+#: 用环境变量给，不写死机器路径 —— 仓库自带的隐私检查会拦下 ``/data/...`` 这类
+#: 只在本机存在的绝对路径。多个目录用 ``os.pathsep`` 分隔。
+_NUMPY_FALLBACKS = tuple(
+    part for part in os.environ.get("DSH_KB_NUMPY_FALLBACKS", "").split(os.pathsep) if part
+)
 
 
 def _probe_numpy() -> bool:
